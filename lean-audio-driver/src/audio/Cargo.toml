@@ -1,0 +1,28 @@
+[package]
+name = "mi-audio"
+version = "0.1.0"
+edition = "2021"
+publish = false
+autobins = false
+build = "../../tools/audio/build.rs"
+
+[lib]
+path = "lib.rs"
+
+[features]
+# The Lean driver (src/lean/TV/Audio) and its Rust mechanisms. Needs the
+# pinned Lean toolchain and, for the TV, the ARM runtime (LEAN_ARM).
+lean = ["dep:tvinit"]
+
+[dependencies]
+tvinit = { path = "../tvinit", optional = true }
+
+[build-dependencies]
+cc = "1"
+
+# One driver process for a TV whose audio is not owned by PID1 (the G13 trial):
+# same Lean driver and mechanisms, with the TV identity passed on the command line.
+[[bin]]
+name = "direct-audio"
+path = "direct-main.rs"
+required-features = ["lean"]

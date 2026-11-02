@@ -1,0 +1,4 @@
+assets/
+.lake/
+__pycache__/
+mi3-audio-requests.json

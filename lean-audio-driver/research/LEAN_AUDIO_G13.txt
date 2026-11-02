@@ -1,0 +1,73 @@
+Lean audio driver on the G13: direct MI path
+============================================
+Branch lean-audio-g13 (on top of lean-audio). Owner asked for the direct
+driver on the G13, reusing everything. Status: built, not hardware tested;
+gated by one offline check the G13 agent must run first.
+
+What is reused, unchanged
+-------------------------
+- The whole Lean driver, src/lean/TV/Audio (gain, resampler, protocol,
+  session open/write/cleanup over Effects).
+- The Rust mechanisms, now in the mi-audio crate (src/audio/service.rs):
+  sockets, clock, lease, raw MI ioctls, ownership check. PID1 on the G06
+  uses the same module.
+- The MI wire layer, src/audio/{mi-pcm,aout-route}.rs: the exact V109
+  request numbers and structures.
+
+What is new
+-----------
+- src/audio/direct-main.rs: the driver as its own static ARM32 process,
+  `direct-audio --serial SERIAL [--port 8877]`, for a TV whose PID 1 is not
+  ours. No Android libraries: it only opens /dev/mik/pcm and /dev/mik/aout.
+- tools/audio/mi3-audio-requests.py: recovers every MI_PCM_*/MI_AOUT_*
+  ioctl request number from a libmi3.so (Thumb movw/movt before the
+  ioctl_wrapper call) and decodes direction/type/number/size. Validated on
+  the G06 library: it reproduces all 13 numbers the driver sends.
+- tools/audio/g13-direct.py: build, stage, quiesce Android audio (SIGSTOP
+  audioserver and the audio HAL, terminate our AAudio bridge), run, log,
+  restore.
+
+Why the gate
+------------
+Both TVs are MT5867 boards whose audio HAL calls libmi3's MI_PCM_Open /
+MI_AOUT_ConnectInput, but their libmi3.so builds differ:
+  G06 V109  /vendor/lib/libmi3.so  a10f65b026358c7acbbb5e8767c6b7a6901695f8c620b7e02abed6ea31b890a9
+  G13 V013  /vendor/lib/libmi3.so  0a7b5e42aeaa5feaee223ad3d98a4c1207056a76910471223227a6039792191c
+            (saved at assets/research/new-tv-20261031T183329Z/artifacts/ on the
+            machine that captured it; not on the machine this was written on)
+The ioctl request number encodes the argument size, so equal numbers for
+all 13 requests mean equal wire structures as far as the kernel checks
+them. Different numbers mean the G13 structures must be mapped before the
+driver may send anything.
+
+Procedure for the G13 agent
+---------------------------
+1. Offline gate (no TV access):
+     python3 tools/audio/mi3-audio-requests.py G06/libmi3.so G13/libmi3.so
+   The G06 file can be extracted from TVBACKUP/TCL32Q3K-V109/super.img
+   (lpunpack -p vendor; debugfs -R "dump /lib/libmi3.so ...").
+   Required result: "none: every driver request has the same number".
+   Otherwise stop and report the table; do not run the driver.
+2. Read AGENTS.md, RECOVERY_NOTES.txt, research/G13_DEVELOPMENT.txt and
+   tools/audio/README.txt. The native session must be installed and running
+   (tools/native-app/run-g13.py), with the AAudio bridge audible.
+3. python3 tools/audio/g13-direct.py start
+   Expected log: "direct-audio: TV 18ACC22D1C47, media owners stopped, Lean
+   driver initialized" then "LEAN_AUDIO ready 127.0.0.1:8877 ...".
+   If it exits with "media owner must be stopped first: NAME", that process
+   is an audio owner the tool did not SIGSTOP: report NAME.
+4. Play through the same socket as before (Doom with sound). Expected: the
+   same quiet level as the bridge. Per five seconds of audio the log shows
+   "LEAN_AUDIO written=... output_peak=..." with output_peak <= 9830.
+   Possible refusals, each a clear log line and a -1 to the app:
+   - "speaker already has inputs": the stopped HAL still has its PCM
+     connected to the speaker. Report; the next step is a route policy that
+     preserves existing inputs (the G06 never needed it).
+   - "invalid existing AOUT handle": the speaker output handle prefix is not
+     0x17 on this MI version. Report the logged value.
+   - "MI request 0x...: status N": report the request and status.
+5. python3 tools/audio/g13-direct.py restore, then restart the native
+   session for the AAudio bridge.
+
+Do not raise the volume. The installed app-volume file (0.0075 of full
+scale on the G13 session) is the gain the driver applies; its ceiling is 0.3.

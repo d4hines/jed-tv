@@ -1,0 +1,13 @@
+# Standalone build of the audio driver's Lean modules and proofs. In dande-tv
+# these modules are part of the `tv` package (src/lean/lakefile.lean) and keep
+# the same module names, so integrating means moving TV/Audio and native/
+# into that package and deleting this file. The build directory matches
+# dande-tv's convention so test/lean/tv/check-audio.py runs unchanged.
+name = "tv"
+defaultTargets = ["TV"]
+buildDir = "../../assets/build/lake/tv"
+
+[[lean_lib]]
+name = "TV"
+roots = ["TV.Audio.Native", "TV.Audio.Proofs"]
+globs = ["TV.Audio.+"]
