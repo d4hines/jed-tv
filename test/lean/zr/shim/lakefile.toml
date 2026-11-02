@@ -1,0 +1,7 @@
+name = "ShimTest"
+defaultTargets = ["ShimTest", "transcript"]
+[[lean_lib]]
+name = "ShimTest"
+[[lean_exe]]
+name = "transcript"
+root = "Main"

@@ -1,0 +1,692 @@
+G13 development: Ethernet + UART
+Verified 2026-11-01; G13 / T221T10 V013 / AU13 / 18ACC22D1C47
+
+Latest application bundle installed (2026-11-01)
+----------------------------------------------
+Updated the physical TV from main 57d4ddc to source 6730586 (origin/main
+0fab3c8 plus the bootloader proof refactor), with the local packaging fixes
+below. The proof refactor was not flashed. The complete G13 app package is:
+  /nix/store/2rs566cpsgpc1a47ws4wni7pckdy3dn4-g13-native-apps
+
+The g13-apps output now includes the separately built Axiom executable and
+RPG art. run-g13.py stages Axiom and the package's share/tiles and share/rpg
+assets. Previously the G13 output/stager omitted Axiom even though Home had
+a tile for it. Snake is also newly installed on this TV. Existing apps,
+native helpers and launcher scripts were updated together; all 29 staged
+file hashes matched after installation. The G13 UID base remains 19000.
+
+The init-managed launcher was stopped with ctl.stop zygote before swapping
+files, then restarted with ctl.start zygote. Native selection and existing
+settings were preserved. Home reports 10 tiles. Snake rendered and accepted
+input; Axiom rendered its game view. Both returned to Home through the Home
+key. Axiom currently has no audio: its log reports Operation not permitted.
+The app's no-network policy excludes socket/connect, while this TV's PCM
+bridge uses TCP. Resolving that capability mismatch is separate follow-up
+work; the update does not relax its sandbox.
+
+A normal reboot restored native Home at DANDE_BOOT +19.08s READY, with
+bootloader=MBOOT on the scheduled stock-input fallback start. This is the
+same native system, not Android fallback. Ethernet returned at
+192.168.77.3:5555 and adb root worked. All 29 runtime files matched again
+after reboot; boot_a, init_boot_a, MBOOT, entry.rc and mode matched their
+pre-update hashes. The host YouTube proxy/replay endpoints were restored.
+Wi-Fi associated on that reboot but DHCP timed out before the router ACKed
+the lease. Restarting the existing dande-wifi service once succeeded:
+sys.dande.wifi_ready=1, 192.168.4.11/24, gateway 192.168.4.1. The saved Wi-Fi
+configuration matches its pre-update hash. Automatic recovery from a DHCP
+timeout is not implemented by this update.
+No separate regression suite was run; the full Nix package build includes
+Axiom's upstream acceptance checks, and the live checks above passed.
+
+Evidence, file manifests, frame captures and rollback archives:
+  assets/research/g13-current-update/
+runtime-before.tar.gz contains the previous app files and helpers;
+metadata-before.tar.gz contains the previous native configuration, including
+private Wi-Fi credentials. Keep that archive private and out of Git. The
+same runtime rollback archive is staged in
+/data/local/tmp/dande-g13-update-6730586/rollback.tar.gz. For rollback, stop
+the init-managed zygote service before restoring runtime files, remove the
+two newly added executables (axiomtv and snaketv), restore the saved manifest,
+and restart the service. Do not use the manual runner's stop/stage path
+under native autostart. No firmware partition was written for this update.
+
+Firmware reduction research (offline, 2026-11-01)
+------------------------------------------------
+See g13-firmware-trim/README.txt for measured V013/V033 app/framework removal
+candidates, native/APEX dependencies and reproducible inventory commands.
+No reduced image or deletion has been tested; this research changed no TV
+state. Existing native startup still depends on the retained vendor stack.
+
+Current-main application update (2026-11-01)
+------------------------------------------
+Main 57d4ddc was built with .#g13-apps and persistently installed over
+Ethernet in /data/local/tmp/dande-g13. The bundle includes tvinit, ytplay,
+Slides, Doom, tvosd, Infinite RPG and City Flight, matching native helpers,
+runtime scripts, tiles, RPG pictures and Freedoom data. The native boot
+selection was preserved. No firmware partition was flashed: init_boot_a
+and the Lean-logo MBOOT still match their previously verified hashes.
+
+Hardware testing exposed a G13 settings-storage regression: Android 14
+puts androidboot.serialno in /proc/bootconfig, not /proc/cmdline. Home
+rendered, but every app was refused with "No qualified settings storage".
+The installed tvinit includes the local settings_store.rs fix accepting
+the exact G13 serial in bootconfig. The existing G06 identity and cache
+checks, and root-owned settings permissions, are unchanged.
+
+The same test exposed a parallel-startup race: the ADB relays could bind
+before loopback was available, exit with AddrNotAvailable, and leave
+YouTube reporting Connection refused. The installed adb-relay now retries
+only that bind error for up to 30 seconds, without delaying display/audio.
+Other bind failures still return immediately. Live YouTube then played
+Coffee Run at 1280x536/24 with AAC, including pause/resume: 611 frames shown,
+9 dropped over 27.2 seconds, and zero audio underruns.
+The final normal reboot started both relays successfully without manual
+intervention; Home reached READY at +18.96s.
+
+Two normal reboots restored Home and Ethernet without USB. UART READY
+was +18.64s and +18.79s; the second used the corrected tvinit. The owner
+confirmed Home, then an audible four-note chime at 25% volume. The current
+shared volume ceiling is 0.3, so 25% means app-volume=0.075; older notes
+using 0.0075 referred to the former 0.03 ceiling. Remote volume keys still
+work. The 14-case silent audio protocol probe passed.
+Slides navigation and Home cleanup, Doom startup and Home cleanup, and
+Infinite RPG's built-in adventure and Back cleanup passed. City Flight
+initializes and exits correctly, but runs at only 4.2-4.3 fps with its
+simulation at 3% of real time; it still needs performance work on this TV.
+
+Original runtime and metadata backups, SHA256 manifests, source patch,
+UART logs, app logs and screenshots are retained under:
+  assets/research/g13-main-live-20261101T211642Z/
+The complete original runtime archive is runtime-before.tar.gz. Stop the
+init-managed zygote service before replacing its runtime files. Do not
+call the manual runner's --stop/stage path during native boot: boot.sh
+treats an unrequested launcher exit as shutdown or fallback. Preserve
+/metadata/dande-tv and the existing Android recovery selection mechanism.
+
+Infinite RPG currently uses the host Lean server at 192.168.77.1:8080.
+Its running server, web/scripts links and log are in that evidence
+directory's rpg-server/. This is a host process, not part of TV autostart;
+the existing --network-only command manages only YouTube proxy/replay.
+The laptop firewall has a temporary rule limited to the direct cable:
+  sudo iptables -I nixos-fw 1 -i enu1u3 -s 192.168.77.3/32 -d 192.168.77.1/32 -p tcp --dport 8080 -m comment --comment dande-g13-rpg -j nixos-fw-accept
+Do not add duplicate rules. It must be restored after a host firewall
+reload if using the direct RPG server, or removed with the same command
+using -D nixos-fw instead of -I nixos-fw 1 when no longer needed.
+
+Native Wi-Fi
+------------
+The owner selected Lean Router. The G13 associated with WPA2-PSK/CCMP and
+received 192.168.4.11/24 by DHCP, gateway/DNS 192.168.4.1. That lease may
+change. A normal reboot verified automatic reassociation and DHCP renewal
+with dande-wifi running and sys.dande.wifi_ready=1. Ethernet remains static
+at 192.168.77.3/24, with its priority-9000
+management route. A priority-9010 main-table rule allows Wi-Fi traffic past
+Android's final unreachable rule; install it before adding the DHCP default
+route, or the gateway itself is reported unreachable.
+
+The G13 rtl8733bu driver rejected the original G06 WEXT association method.
+Use its matching /vendor/bin/hw/wpa_supplicant with nl80211. It drops to
+Android's wifi UID (1010), so the saved root-only PSK configuration under
+/metadata/dande-tv/wifi/wpa.conf is copied to a private wifi-owned runtime
+directory. Neither the password nor derived PSK belongs in Git or logs.
+The static wpa_cli uses an explicit local socket directory; Android has no
+/tmp. Its reply socket must be writable by UID 1010 inside that private
+directory. Select network 0 explicitly after the vendor control socket is
+ready. The G06 supplicant binary itself is not used on the G13.
+
+native-g13.rc imports the optional /metadata/dande-tv/wifi/service.rc.
+It starts dande-wifi when Ethernet/netd setup reports ready. The source is
+src/runtime-scripts/network/{wifi-g13.rc,wifi-g13.sh,lease-g13.sh}; installed
+paths are wifi/service.rc, wifi/start.sh under /metadata/dande-tv, and
+/data/local/tmp/dande-g13/wifi/lease.sh. A private static BusyBox runs DHCP
+and renews the lease; the hook writes app DNS to the chroot's resolv.conf.
+Wi-Fi has its own bounded startup and cannot select Android fallback or
+block Home. A missing optional service.rc on an unconfigured TV is ignored
+by init. sys.dande.wifi_ready=1 means DHCP configuration completed.
+Lean Router also presents a captive portal: ordinary HTTP initially
+returned its Welcome page. POST /accept on 192.168.4.1 returned Connected.
+Afterward DNS resolution, an external Cloudflare HTTP response and ping to
+1.1.1.1 through wlan0 all succeeded.
+That acceptance is router state; Wi-Fi association and DHCP alone do not
+establish Internet access. The boot script does not automatically accept
+portals. Captures are in the evidence directory's wifi/ subdirectory.
+
+Normal connection
+-----------------
+Use a direct Ethernet cable for ADB and the existing UART for boot logs and
+recovery. The laptop is 192.168.77.1/24, this G13 is 192.168.77.3/24, and
+192.168.77.2 remains reserved for the original G06. No gateway is needed
+on this management link. USB data is not required for normal development.
+
+  nix develop -c adb connect 192.168.77.3:5555
+  nix develop -c adb -s 192.168.77.3:5555 shell
+  nix develop -c adb -s 192.168.77.3:5555 root
+
+The host's persistent NetworkManager profile is dande-tv, UUID
+04764156-6616-472c-9a12-df54c5ad3559, matched to Ethernet MAC
+6C:6E:07:19:FF:38 (currently enu1u3). It autoconnects with .1/24, no default
+route, and IPv6 disabled. The former Wired connection 1 is preserved.
+To activate the existing profile:
+
+  nmcli connection up dande-tv
+
+The G13 Python tools default to 192.168.77.3:5555 and check the physical
+serial, G13 device name and AU13 build before requesting root. For a
+deliberate USB recovery session, TV_ADB_SERIAL=18ACC22D1C47 overrides the
+transport; an IP address is never treated as sufficient device identity.
+
+The launcher starts on its own. After a TV reboot, restore the host-backed
+YouTube proxy/replay links and synchronize the TV clock with:
+
+  nix develop -c python3 tools/native-app/run-g13.py --network-only
+
+This leaves the running launcher alone. Host servers bind to localhost;
+ADB reverse over Ethernet carries their traffic to the TV's abstract
+sockets. Existing static relays expose them as 127.0.0.1:8899 and :8090
+inside the TV. TLS remains in the player. Repeat this command after an
+adbd restart, which discards reverse mappings. Plain ADB does not depend
+on these host servers or clock synchronization.
+
+UART
+----
+Current owner: the user's Screen session 96550, window 0, on ttyUSB1.
+Use that session; never open a competing serial reader:
+
+  nix shell nixpkgs#screen -c screen -x 96550
+
+When no session owns the adapter, create one using its stable identity:
+
+  nix shell nixpkgs#screen -c screen -h 10000 -fn /dev/serial/by-id/usb-FTDI_DCSD_USB_UART_AU0563JT-if00-port0 115200
+
+Use 115200 8N1 with flow control off. Scrollback: Ctrl+A, then [, then
+arrows/PageUp/PageDown; Esc returns to the live terminal. Ctrl+A then D
+detaches. No sudo is needed with serial-device group access. A root-owned
+old Screen session may require sudo to attach; session ownership and device
+permissions are separate. The UART Android shell is uid2000, not root.
+
+Persistent TV configuration
+---------------------------
+src/runtime-scripts/native-app/network-g13.sh is installed as
+/metadata/dande-tv/network.sh. native-g13.rc starts it independently of
+the launcher during post-fs-data. The script checks the exact TV/build,
+waits for eth0 and netd's initial routing-rule flush, sets eth0 to .3/24,
+adds the connected main-table route and priority-9000 subnet rule, and
+enables authenticated ADB on port 5555. sys.dande.network_ready becomes 1
+only after these commands succeed. It configures no Internet default route.
+
+Two reproduced G13 differences required explicit handling:
+  * netd flushes non-local policy rules during startup. Installing ours
+    before that flush left the address present but Ethernet unreachable.
+    The script waits for netd's terminal priority-32000 unreachable rule.
+  * Root adbd's TCP accept passed a su-owned descriptor to enforcing netd,
+    which denied its use and stalled the connection. Native init exports
+    ANDROID_NO_USE_FWMARK_CLIENT=1. The exact libnetd_client supports this
+    root-only bypass; the dedicated subnet rule supplies routing instead.
+    This export applies to native G13 services, not the G06 or stock Android
+    fallback. SELinux remains globally Enforcing and ro.adb.secure remains 1.
+
+The ordering agrees with AOSP RouteController::Init (flushRules before
+addUnreachableRule):
+https://android.googlesource.com/platform/system/netd/+/master/server/RouteController.cpp
+Root-only fwmark bypass reference:
+https://android.googlesource.com/platform/system/netd/+/refs/tags/android-13.0.0_r42/client/FwmarkClient.cpp
+
+To update just the network config from a working rooted ADB connection:
+
+  nix develop -c python3 tools/native-app/g13-boot.py network
+
+This verifies the installed image and existing manifest, saves the current
+configuration under assets/research/g13-network-config-TIMESTAMP/, updates
+network.sh/native.rc and their manifest hashes, preserves boot selection,
+and applies network.sh immediately. Init rc/environment changes take effect
+on the next normal boot. No flash is involved. Keep /metadata/dande-tv:
+the installed startup image depends on its entry.rc. For Android fallback
+and full recovery, read G13_NATIVE_BOOT_NOTES.txt and RECOVERY_NOTES.txt.
+The static-IP service belongs to native startup; stock Android fallback
+does not import it. A manual netd restart requires reapplying network.sh.
+
+Fastboot is separate from ADB. The general Fastboot protocol defines
+TCP/UDP transport on 5554, but this G13 has only a verified USB Fastboot
+path, and its captured MBOOT startup reports "No ethernet found". Do not
+assume adb over Ethernet provides network flashing. Keep UART and the
+known USB Fastboot cable available for recovery.
+https://android.googlesource.com/platform/system/core/+/master/fastboot/README.md
+
+Verification and retained evidence
+----------------------------------
+assets/research/g13-ethernet-20261101/ records UART bootstrap, initial
+Ethernet access, the failed early-route attempt, and the repaired reboot.
+final-config/ contains the read-back installed configuration; final-state.txt
+also records the replay HTTP response and reuse of the host services.
+The final normal reboot changed boot ID from
+581ff8ca-895d-4381-8648-4f5bbc7769c6 to
+d7bd8a4a-e43d-4e56-8602-6afda043790f. Without USB data, .3/24, rule 9000,
+authenticated ADB, network_ready=1 and launcher_ready=1 all returned.
+adb root then reconnected over Ethernet; UID0/su, Enforcing and
+ro.adb.secure=1 were read back. A UID19001 client obtained HTTP 200 from
+the YouTube CONNECT proxy through the Ethernet ADB reverse link.
+
+No firmware partition was changed for Ethernet setup. The full installed
+init_boot_a still hashes to:
+0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b
+
+The initial UART bootstrap used the existing Screen, authenticated local
+ADB with the host key, and a one-time supervisor wrapper to install the
+root-owned metadata files. The complete original app directory was restored
+before installation. Original metadata and the wrapper are retained under
+device-bootstrap/ in the evidence directory. research/g13-serial-adb.py
+implements the bounded UART/local-ADB bridge; it never copies the private
+key to the TV. Its root request can lose the daemon's restart reply: verify
+the resulting UID independently, as done here. Use ordinary Ethernet ADB
+for subsequent work. This validation was a normal reboot, not mains removal
+or a new physical standby/wake test.
+
+Local changes and old-TV compatibility
+--------------------------------------
+The G13 startup warning now displays the Lean wordmark, installed over
+Ethernet and verified by full readback, normal reboot and owner observation.
+See G13_UNLOCK_LOGO.txt for source artwork, hashes, evidence and rollback.
+tools/native-app/g13-unlock-logo.py is guarded for this exact G13 firmware;
+it does not change G06 assets or shared build defaults. The authored SVG is
+src/runtime-scripts/native-app/lean-boot-logo.svg; the offline image builder
+is research/prepare-g13-unlock-logo.py. Only the MBOOT JPEG slot was written;
+Ethernet/native configuration, init_boot and backup bootloaders are unchanged.
+
+The G13 work was initially based on origin/main b47229a. That first rebase
+used the already-fetched ref because a fresh fetch lacked credentials;
+backup/g13-before-rebase-20261101T185145Z retains the prior branch tip.
+
+Shared code keeps the old defaults; G13-specific behavior is selected by
+explicit build/runtime settings or the exact available Android ABI:
+
+  demo/package.nix, flake.nix
+    appUidBase defaults to 10000. .#pid1.passthru.apps keeps IDs
+    10001..10003; only .#g13-apps chooses 19001..19003. Both retain the
+    existing app policy. app-uids.json records the result; G13 staging
+    rejects installed-package collisions. Packaging also builds tvosd,
+    uses ffmpeg-headless and exposes pinned Android Rust/native tools.
+
+  src/display/{main,native,overlay}.rs
+    Select the complete Android 11 or Android 14 SurfaceComposer symbol
+    set, including parent argument representation, metadata, getSurface
+    and LayerStack. The Android 14 _exit cleanup workaround is restricted
+    to that ABI; G06 retains normal process exit. TV_DISPLAY_SIZE defaults
+    to 1280x720. TV_DISPLAY_STARTUP_FRAMES defaults to 1; G13 native boot
+    chooses 8 to dismiss its boot-logo plane. TV_RUNTIME_DIR defaults to
+    /tmp for the volume overlay and uses the G13 chroot path only when set.
+
+  src/audio/{bridge,protocol}.rs, standalone-app-state.c
+    AudioSystem volume lookup supports both enum and old unsigned-device
+    symbols. Software gain reads TV_RUNTIME_DIR/app-volume, default /tmp.
+    The standalone shim's global-symbol requirement is documented; its
+    injection remains in the G13 native-startup path.
+
+  src/platform/src/input.rs, src/doomtv/src/main.rs, src/ytplay/src/player.rs
+    Exclusive evdev grabbing requires TV_INPUT_EXCLUSIVE to be present.
+    Ordinary G06/QEMU input is unchanged. Doom/YouTube skip physical-fb
+    waits only when TV_FB_PATH selects a shared framebuffer.
+
+  tools/audio/{rust-build,android-linker}.sh
+    TV_RUSTC, TV_ANDROID_CLANG, TV_ANDROID_READELF, TV_ANDROID_LIB_DIR,
+    TV_AUDIO_BUILD_DIR and TV_AUDIO_START_OBJECT allow isolated exact-TV
+    builds. Existing Rust 1.92 and Homebrew LLVM defaults remain available;
+    Linux can use explicit Nix tools or LLVM from PATH.
+
+  src/probes/{android-client,adb-relay,g13-network}.rs
+    G13 shell-context native client, static TCP/abstract-socket relay and
+    UID/socket diagnostic. They do not replace the old-TV launcher.
+
+  src/runtime-scripts/native-app/{android-g13.rc,native-g13.rc,early-g13.sh,
+    boot-g13.sh,network-g13.sh,start-android.sh,supervise-android.sh}
+    Separate G13 fallback/native init, framework-free media setup, boot
+    supervision, Ethernet, private chroot and native helper lifecycle.
+    G06 boot scripts are unchanged. Stock init stays PID1 on the G13.
+
+  tools/native-app/{build-g13-boot.py,g13-boot.py,run-g13.py,g13_device.py}
+    Exact-G13 image builder, verified configuration/selection tool, manual
+    Android runner and transport-independent identity checks. network-only
+    reconnects host services for automatic native startup.
+    tunnel.py adds --host/--port while retaining 192.168.77.1:8899 defaults.
+
+  research/g13-serial-adb.py and documentation
+    UART bootstrap helper; this guide, G13_TVINIT_NOTES.txt,
+    G13_NATIVE_BOOT_NOTES.txt, AGENTS.md, README.txt and the native-app README
+    describe the two TV paths and distinguish current state from history.
+
+Compatibility checks are retained in
+assets/research/g13-compatibility-20261101/:
+  * Both complete app packages build, with the expected distinct UID lists.
+  * Display and audio compile against exact G06 V109 and G13 V013 libraries.
+    G06 files were extracted read-only from its saved stock super image.
+  * Captured exports confirm the Android 11/14 Surface and volume branches.
+  * Eight audio protocol tests and three pixel tests pass.
+  * The newly built display passes a hidden 64x64 lock/post probe on G13
+    and exits cleanly while the normal launcher remains running.
+
+That first validation did not include a new physical G06 run or a QEMU run;
+the later main-integration QEMU results are recorded below.
+No G13 firmware, metadata configuration or UID-specialized package should
+be installed on the original TV. The build flag is for apps, not firmware.
+
+Second main integration review (2026-11-01, base 07dc37e)
+-------------------------------------------------------
+The next session started with main equal to origin/main 07dc37e and the local
+bootloader/startup commit absent from the tree and ancestry. Recovered the
+intact 69d6c6c commit from the reflog, retained it at backup/g13-main-69d6c6c,
+and replayed it onto 07dc37e. The single conflict was the G13 app catalog:
+main already had UID 19006; retained that list and the complete staging list.
+All 64 files from the recovered commit matched after replay. Published main
+history and the new Lean PID1/foreground controller were preserved.
+
+The combined Linux Nix build exposed another /usr/bin/env interpreter issue,
+this time in the new Bash linker wrappers. The app package now patches their
+shebangs before building, so Cargo can invoke them inside the Linux sandbox.
+This changes package preparation, not the linker logic or TV runtime.
+
+Both G06/G13 app packages and the 929882-case Lean policy check build.
+All four QEMU app gates pass, including the full tours through City Flight.
+The new Lean controller passes 19 lifecycle cases and 13 native scalar ABI
+cases; all 16 Python tests pass. All 1206 tracked source/build inputs match
+the tested package snapshot; both app catalogs and ARM32 binaries verify.
+Validation and artifact records live in assets/research/g13-rebase-07dc37e/.
+The prior bootloader source is unchanged and its saved OS binary still has
+SHA256 2f486d9e306fca11c76844e6a4389f1d112aa96aa43f71d574f2477967229a2c.
+Fresh fetching was unavailable because GitHub SSH authentication failed;
+07dc37e is the owner's locally fetched origin/main. No TV state changed.
+
+Main integration review (2026-11-01, base 93b2d3b)
+------------------------------------------------
+Rebased the local Lean bootloader and G13 startup work onto owner-fetched
+origin/main 93b2d3b, retaining all 45 intervening commits. The replay applied
+without conflicts. The original unpublished commit is preserved at
+backup/g13-before-main-rebase-65ee7f2. No published main history was rewritten,
+and no push or TV state change was performed during this integration.
+
+Followed main's source-layout rule: bootloader ARM code generation, the
+vendored DSL and the offline export harness now live under tools/bootloader.
+Runtime Lean/FFI and contracts stay under src/bootloader. This move preserves
+the 23236-byte OS payload exactly (SHA256 2f486d9e306fca11c76844e6a4389f1d112aa96aa43f71d574f2477967229a2c).
+
+Two integration fixes were necessary:
+- Main's Slides build invoked the moved Lean helper directly; the Linux Nix
+  sandbox has no /usr/bin/env, so both app variants failed with exit 126.
+  Invoke both Bash helpers explicitly through Bash. Both variants now build.
+- Main added app ID 6 but the G13 runner still accepted only IDs 1,2,3,5 and
+  deployed the older executable list. It now validates UIDs
+  19001,19002,19003,19005,19006, stages/verifies all seven runtime executables
+  and generated tile files, and includes RPG/Flight in scoped cleanup.
+  Host tests cover current-catalog staging, wrong-platform rejection and
+  a UID-19006 collision before any stop/upload operation.
+
+The serial transport test also exposed a PTY-specific final-ACK race: lrzsz
+rb drains then flushes its terminal, but a PTY drain does not wait for the
+master to consume pending bytes. Its output now uses a pipe while its input
+remains a PTY, and the link is paced as 115200-baud 8N1 with flow control off.
+The production Screen/YMODEM sender and all TV settings are unchanged.
+Three consecutive 82222-byte round trips passed with terminal settings
+preserved. The original failure and syscall trace remain in the evidence.
+
+Validation on the combined source:
+  nix build .#pid1 .#g13-apps .#native-app-tools .#checks.aarch64-linux.lean --no-link
+  all four PID1 QEMU gates: contract, supervisor, normal tour, TV bridge
+  929882 Lean policy/ABI cases; 21 Python tests; 11 Rust audio/pixel tests
+  G06 and G13 native display/audio compilation against captured exact libraries
+  bootloader pure-model/type-color, entry, image/FDT, CPU, packet and Linux QEMU checks
+All 1050 checked app/runtime/build inputs match the source snapshot used by
+the tested packages; later edits only affect documentation and host tests.
+The two graphical tours include the upstream RPG and City Flight apps as well
+as video/audio, Slides, Doom, Home and nested Back navigation. The G13 offline
+startup candidate rebuilt with the same installed init_boot SHA256
+0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b and includes
+the new UART helper in its external configuration. Nothing was installed.
+
+Evidence: assets/research/g13-leanboot-functional/main-builds*.{json,log},
+main-artifacts.json, main-native/, main-qemu/, main-bootloader/ and
+main-boot-candidate/. These are host/emulator results; the current refactored
+bootloader and newly rebased app bundle have not been rerun on either TV.
+
+Earlier main integration review (2026-11-01, base b47229a)
+----------------------------------
+The owner refreshed origin/main; it remained b47229a. After committing the
+G13 changes, git rebase origin/main reported the branch already up to date.
+There were no conflicts or new upstream changes to resolve. The local g13
+branch is one commit ahead of that main; no push was performed. The original
+commit is retained at backup/g13-before-main-rebase-20261101T1933.
+
+Validated the committed code with:
+  nix build .#pid1 .#g13-apps .#native-app-tools .#checks.aarch64-linux.lean --no-link
+  nix run .#pid1 -- --check-contract
+  nix run .#pid1 -- --check-supervisor
+  nix run .#pid1 -- --check
+  nix run .#pid1 -- --check-tv-bridge
+  nix develop -c python3 -m unittest discover -s test -p 'test_*.py'
+  nix develop -c python3 -m unittest discover -s tools -p 'test_*.py'
+
+All four ARM32 graphical QEMU gates passed: app ABI/display ownership,
+confinement and Home escalation, menu/video/audio/Slides/Doom, and the same
+tour through shared frames/TCP PCM. Lean checks passed 667499 policy/ABI
+cases. Python tests passed 18 cases; native Rust audio/pixel tests passed 11.
+Both native backends compiled against the exact G06 and G13 libraries.
+The new G13 display binary passed a hidden 64x64 lock/post probe from the
+existing private app directory. Ethernet ADB/root, native startup and the
+installed Lean logo/init_boot hashes were checked; host links were restored.
+No flash or reboot was performed during this integration review.
+
+Both rebuilt application packages retain the expected UID sets and are
+byte-identical to their earlier compatibility builds, including every
+packaged executable. G06 remains 10001..10003; G13 remains 19001..19003.
+Package evaluation passes on ARM64/x86_64 Linux and ARM64 macOS. Intel macOS
+evaluation fails because the pinned Nixpkgs dropped x86_64-darwin support;
+the unchanged upstream b47229a fails identically. flake.lock is unchanged.
+This existing host-platform limitation is separate from TV compatibility.
+
+Evidence: assets/research/g13-main-integration-20261101/; QEMU serial logs
+are under the integration-qemu-* directories referenced by its gate logs.
+The old G06 hardware was not rerun. These QEMU tests use the graphical
+surrogate kernel; the local exact-G06-kernel emulator was unavailable.
+Thus compilation, protocol/policy tests and previous hardware evidence
+support compatibility, but do not constitute a fresh physical G06 test.
+
+Startup timing and UART readiness (2026-11-01)
+--------------------------------------------
+The owner reports slow startup from both standby and disconnected mains.
+Three measured normal reboots establish the software timeline below; these
+are not fresh physical standby/mains measurements. Times are seconds since
+Linux started, using /proc/uptime rather than the initially incorrect RTC.
+
+                                     Initial logging   Cleanup overlap  Repeat
+  Begin native early-init                   7.56               7.58      7.65
+  Early audio shim / wake lock ready        8.03               8.06      8.07
+  Launcher boot script starts              12.48              12.54     12.58
+  Ethernet configuration complete          13.00              13.07     13.09
+  IR found; start launcher supervisor      14.41              13.20     13.24
+  Home prepared (tvinit log)               17.03              14.66     14.75
+  Audio bridge listening                   18.35              17.91     18.34
+  Display startup frames submitted        18.58              18.29     18.56
+  READY marker                             18.67              18.38     18.66
+
+MBOOT separately reports kernel handoff around 2.51 s on its own clock;
+host-timestamped UART shows about 2.6 s from reset to kernel handoff.
+That suggests roughly 21 s from reset through software readiness. The
+normal reboot's preceding orderly shutdown adds about four seconds and
+should not be counted as power-on startup. Vendor /proc/boottime uses a
+different origin from Linux uptime; do not subtract them interchangeably.
+
+The retained early kernel trace confirms the largest single identified
+cost: init compiles /debug_ramdisk/userdebug_plat_sepolicy.cil on every
+boot. Compilation runs from 0.893 to 5.684 s in the first trace and from
+0.896 to 5.696 s in the second (4.79-4.80 s); the repeat took 4.82 s.
+Policy loading then brings
+second-stage init to about 6.02 s. This is a consequence of our debug/root
+policy path: AOSP OpenSplitPolicy explicitly skips the vendor precompiled
+policy when a userdebug policy is selected. The remaining startup includes
+stock init/APEX/mount setup and vendor driver/media initialization. There
+is no evidence here of a fixed 30-second sleep in our startup scripts;
+their loops exit as soon as the required conditions hold.
+
+The local improvement overlaps the sequential ctl.stop requests for unused
+framework services with launcher setup. It prepares Home earlier, while
+preserving the same services and display/audio readiness checks. Final
+readiness changed by only 0.29 s in the first pair and returned to 18.66 s
+on repeat: no meaningful total speedup is established. The media services
+are now the later dependency. Next targets are loading an equivalent
+precompiled debug policy and reducing/properly overlapping vendor media
+startup. The former requires work before early-init; placing a cached file
+in /metadata alone does not change stock init's policy-loading behavior.
+Neither optimization is implemented by these script changes.
+
+UART now shows timestamped DANDE_BOOT milestones for early-init, Ethernet,
+launcher/input, display/audio, failure fallback, and final READY. Example:
+  DANDE_BOOT +18.38s READY: home frames submitted, audio listening, IR available
+The final marker requires both the eight-frame display startup burst and
+the audio bridge's readiness log from this boot. It means software is ready;
+it does not measure panel light output or certify Internet/YouTube access.
+On the repeat, the owner explicitly confirmed Home was visible by READY.
+NETWORK means the static address/routes and ADB setting have been applied,
+not that a host ADB connection has already succeeded. Normal kernel console
+verbosity remains unchanged. Logging failures are best effort.
+
+Source: boot-log-g13.sh, early-g13.sh, boot-g13.sh and network-g13.sh in
+src/runtime-scripts/native-app/. The image builder includes the shared
+helper in new staged configurations. Update an existing installation with:
+  nix develop -c python3 tools/native-app/g13-boot.py logging
+This checks the exact TV, installed image and current manifest; saves a
+full config backup; stages and syntax/hash-checks all four scripts; updates
+the manifest and verifies readback without changing mode/entry selection.
+It does not reboot. The helper writes directly to /dev/console because
+kernel printk level 1 suppresses ordinary /dev/kmsg messages on UART.
+
+Read current-boot milestones over ADB with:
+  nix develop -c adb -s 192.168.77.3:5555 shell cat /dev/dande-boot.log
+The early script also saves /dev/dande-native/early-dmesg.log in RAM before
+vendor chatter overwrites the small kernel ring buffer. Both reset at boot.
+
+Evidence: assets/research/g13-startup-timing-20261101/, especially
+timing-summary.json, early-dmesg.txt, reboot-uart-chunks.jsonl, optimized-1/
+and optimized-2/ (including the owner's visual confirmation).
+Config backups: assets/research/g13-logging-config-20261101T194143Z/before/
+(before instrumentation), and g13-logging-config-20261101T194257Z/before/
+(before cleanup overlap). Restore the saved boot.sh, early.sh, network.sh
+and manifest together to roll back that config, preserving root ownership,
+0600 modes and metadata_file labels; mode/entry.rc were never changed.
+The extra boot-log.sh can remain unused after rollback. No bootloader,
+init_boot or other firmware partition was written for this investigation.
+All 14 silent audio protocol cases passed after the overlap change. Exact
+init_boot/MBOOT hashes, authenticated Ethernet ADB, Enforcing, native entry
+selection and the installed manifest were verified; host proxy/replay links
+were restored. A final ordering adjustment keeps the original metadata
+ownership checks before sourcing the logger; it was syntax/readback checked
+and boot-tested on the final repeat. final-config/ records that installation,
+with its prior config saved at g13-logging-config-20261101T194421Z/before/.
+
+Parallel startup follow-up (2026-11-01)
+--------------------------------------
+Audio initialization now starts immediately after launching tvinit, before
+waiting for the frame file. It does not consume that file or the private
+chroot device nodes. This allows audio's library/service initialization to
+overlap the launcher's namespace and first-frame preparation. Display and
+OSD still start only once the frame file exists, and the supervisor retains
+the same child cleanup and final display/audio readiness conditions.
+Source: src/runtime-scripts/native-app/supervise-android.sh. This script is
+specific to the G13 runner; no G06 scripts, app ABI or confinement changed.
+
+The measured reboot reached Home preparation at 14.70 s, display readiness
+at 18.61 s, audio readiness at 18.71 s, and READY at 18.80 s (Linux uptime).
+Compared with the preceding 18.38/18.66 s runs, this establishes successful
+parallel startup, not a total speedup. Logcat shows the native audio client
+waiting for media.audio_policy at 13.562 s and returning at 18.571 s after
+5009 ms. The earlier start is still gated by Android/vendor audio readiness.
+
+Dependencies retained:
+  * SELinux policy must be compiled/loaded before normal services start in
+    their correct domains. Launching those services alongside compilation
+    is not a safe scheduling change. An equivalent precompiled policy is
+    the larger remaining opportunity; it is not implemented here.
+  * Ethernet, native launcher preparation, audio and display already run
+    concurrently once their prerequisites are met. The display needs both
+    a valid frame and SurfaceFlinger/vendor compositor readiness.
+  * Vendor startup has real ordering requirements. mtk_rm.sh waits for
+    mknod_util_end; dtv_svc.sh waits for mtk_rm_end and /dev/fusion0 before
+    launching the TV middleware. Several HALs in turn wait for dtv_svc.
+    Their launch order was inspected but not modified speculatively.
+
+For an existing verified G13 installation:
+  nix develop -c python3 tools/native-app/g13-boot.py parallel
+This updates only supervise.sh and its manifest entry after backing up,
+syntax checking and verifying hashes. The running supervisor retains its
+old open script; the new ordering applies on its next start. New builds and
+the G13 manual runner also copy the updated source. No flash or reboot is
+performed by this installer, and mode/entry.rc selection is preserved.
+
+Backup: assets/research/g13-parallel-config-20261101T194644Z/.
+For rollback, restore runtime-before/supervise.sh to the runtime directory
+(root:root, 0755, normal restored label) and before/manifest.json to the
+metadata directory (root:root, 0600, metadata_file label), then verify hashes.
+Evidence: assets/research/g13-startup-parallel-20261101/ contains captured
+vendor scripts/dependencies and validation. The timed reboot is under
+assets/research/g13-startup-timing-20261101/parallel-audio-1/.
+All 14 silent audio protocol cases passed afterward. The installed runtime
+hash matches the new source; the complete manifest and native selection
+verify. init_boot/MBOOT hashes remain unchanged, SELinux remains Enforcing,
+authenticated Ethernet ADB works, and host proxy/replay links were restored.
+
+Deferred bootloader experiments (2026-11-01)
+------------------------------------------
+Resumed later on the same date: a Lean/ZrAsm RAM probe has now executed on
+the TV, printed its UART marker and returned to MBOOT. See
+G13_LEAN_BOOTLOADER.txt for the source, tests, live memory/cache requirements
+and exact result. The parked decision below is retained as history; the
+installed bootloaders remain in place.
+
+Owner decision: keep the installed bootloaders as they are, use RAM-only
+experiments as the starting point, and work on other tasks for now. This
+records a future direction, not a request to start a probe or reboot now.
+No RAM payload has been built or run. No TV command, boot-state change or
+partition write was performed while recording this decision.
+
+The preceding offline inspection of the exact V013 MBOOT found command
+table entries for go, loadb (Kermit), loady (YMODEM), fatload, md, mw and cp.
+The go handler is linked at 0x274b10fc; loadb/loady share 0x274ba504.
+These are analysis addresses, not established live entry/load addresses.
+Serial loading, the calling convention and returning from a payload have
+not been tested on the TV. Research uses the exact saved MBOOT under
+assets/backups/g13-v013-stock-20261031/; its mapping and early boot sequence
+are described in G13_STARTUP_TRACE.txt. That trace's old live-state notes
+predate successful UART access and Android recovery.
+
+When resuming, first establish the live memory layout, relocation, reserved
+regions, stack and cache requirements. The proposed first payload only
+prints a distinctive UART marker and returns to MBOOT. Review its entire
+write/call surface before loading it: no flash/storage controller writes,
+environment saves, slot changes, fuse programming or persistent settings.
+Keep capture through the existing sole UART owner and save evidence under
+assets/. A RAM-only crash should be recoverable by power cycling provided
+the payload has not changed persistent state; executing from RAM alone
+does not guarantee that condition. Do not start by chaining a whole new
+bootloader or reinitializing DRAM.
+
+Recovery boundaries established in the discussion:
+  * UART command access and mstar_usb USB Fastboot execute inside MBOOT.
+    They restored stock init_boot_a after the failed Magisk trial, but
+    cannot be assumed to work if MBOOT itself fails before its console.
+    Evidence: assets/research/g13-uart-recovery-20261101T084204Z/ and
+    assets/research/g13-stock-restore-20261101T084914Z/.
+  * MBOOT_b and MBOOTBAK were verified stock. Automatic fallback to either
+    after corrupting the active bootloader has not been demonstrated.
+    BootROM download, external eMMC programming and JTAG recovery have
+    not been established on this board. Backups alone do not provide a
+    working restore path; a severe failure could require hardware repair
+    or a replacement mainboard.
+  * The working Lean logo changes only a JPEG outside the executable and
+    signature span. It does not demonstrate that modified bootloader code
+    will pass the earlier loaders' authentication. Android's unlocked
+    state does not establish that either. See G13_UNLOCK_LOGO.txt.
+  * Android A/B is separate from the earlier bootloader-copy selection.
+    The captured slot-B boot images match stock, but system_b, vendor_b,
+    product_b, system_ext_b, vendor_dlkm_b and system_dlkm_b have no extents;
+    snapshotctl reports no update/snapshots. B is not a complete original
+    Android installation or a demonstrated rescue OS. Evidence:
+    assets/research/g13-slot-b-check-20261101/{boot-hashes.json,
+    super-layout.txt,snapshot-state.txt}. To run Google TV, select the
+    existing Android fallback on A as described in G13_NATIVE_BOOT_NOTES.txt;
+    do not switch slots on the assumption that B is a complete backup.

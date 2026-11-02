@@ -1,0 +1,9 @@
+libavcodec/aarch64/h264cmc_neon.S
+libavcodec/aarch64/h264dsp_neon.S
+libavcodec/aarch64/h264idct_neon.S
+libavcodec/aarch64/h264pred_neon.S
+libavcodec/aarch64/h264qpel_neon.S
+libavcodec/aarch64/hpeldsp_neon.S
+libavcodec/aarch64/me_cmp_neon.S
+libavcodec/aarch64/videodsp.S
+libavutil/aarch64/crc.S

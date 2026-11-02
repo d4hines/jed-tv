@@ -1,0 +1,110 @@
+G13 V013 startup logo: Lean installed and verified
+2026-11-01 UTC
+
+Current result
+--------------
+The white Lean wordmark on black replaces the unlocked-device warning on
+this G13 / T221T10 V013 / AU13, serial 18ACC22D1C47. The owner confirmed
+"Yes, Lean logo appeared" after the normal reboot. Ethernet ADB at
+192.168.77.3:5555, adb root, native launcher startup and the host proxy/replay
+setup all returned. The boot ID is c46325e4-0fd2-4b3f-92ac-2b1ad7d1138e.
+This was installed over Ethernet, without a USB data cable.
+
+The full MBOOT readback, both before and after reboot, matches:
+a342fcdd62b2ce7121d977b9410d2c05aa51757bf7d26d6b445423e97122439b
+Only the warning JPEG changed. The TV remains unlocked/orange with global
+SELinux Enforcing and ro.adb.secure=1. MBOOT_b and MBOOTBAK remain stock:
+643058879b84d044dea58a4572bd9ade1cc3140f3d3357eeaabae53be32ec382
+The installed init_boot_a is unchanged:
+0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b
+
+The preceding TCL-logo trial also passed a normal reboot; the owner
+confirmed "Yes, TCL logo and no warning". Its full MBOOT hash was:
+6f3fec853370af6f4759102d656f0bfd80abaa39d9de694882fd228034f69e8f
+The owner's subsequent request to use Lean authorized the same asset-only
+write with the new artwork. These are G13-specific images, not G06 assets.
+
+Artwork and build
+-----------------
+Source: https://lean-lang.org/ inline header SVG, captured 2026-11-01.
+The wordmark path is preserved, centered at 486x169 on a black 1280x720
+canvas with a white stroke. Authored source:
+  src/runtime-scripts/native-app/lean-boot-logo.svg
+Selected JPEG: assets/research/g13-lean-logo-20261101/lean-boot-logo-rgb.jpg
+Baseline RGB/YCbCr 4:2:0 JPEG, quality 92, 17210 bytes, SHA256:
+26d5fd7651a625f980c68c369fca42204269b438bd2cb1702ce166477e3a4600
+
+Render with librsvg and ImageMagick, explicitly retaining three components:
+  rsvg-convert src/runtime-scripts/native-app/lean-boot-logo.svg -o OUTPUT.png
+  magick OUTPUT.png -strip -colorspace sRGB -type TrueColor -sampling-factor 4:2:0 -interlace none -quality 92 OUTPUT.jpg
+
+research/prepare-g13-unlock-logo.py builds the candidate entirely offline.
+It requires Python with Pillow and Unicorn and accepts three positional
+arguments: exact stock MBOOT image, baseline JPEG, and a new output directory.
+Use the stock image under assets/research/g13-unlock-warning-20261101/MBOOT.img;
+do not build against a previously modified image. The selected output is
+assets/research/g13-lean-logo-20261101/candidate-rgb/. Earlier grayscale
+files in candidate/ were not installed.
+
+Exact V013 layout and validation
+-------------------------------
+AVBPanelLogo at 0x274c7714 invokes avbShowStatus 0 0 1 1 2 for the unlocked
+state. do_avbShowStatus at 0x27403474 selects chunk-header words 0x27/0x28:
+JPEG offset 0x2bfa00, length 47903. The original 720x480 image reads "Your
+device has been unlocked and can't be trusted. System will boot up
+continuously." The display routine reads this asset directly from MBOOT.
+BootlogoFile only affects AVBPanelLogo's normal/green branch.
+
+The replacement is padded with zero bytes after the JPEG end marker to fill
+the existing slot. It changes 45401 bytes relative to stock, all inside that
+slot. The write spans 94 sectors of 512 bytes, starting at sector 5629,
+preserving the original 225 bytes following the asset. Total: 48128 bytes.
+No header, executable instruction, signature or other asset was changed.
+
+MBOOT's header describes executable bytes [0x2400,0x2bf860). Its SECURITY
+record starts at 0x2bf860 and records version 1 and code length 0x2bd460;
+the following 256-byte signature ends at 0x2bf970. The asset starts at
+0x2bfa00. These boundaries and the unchanged partition tail are checked by
+the builder. It also executes the exact V013 display command and chunk
+getter in Unicorn against stock and candidate images. Both read the same
+slot and reach the display call; Pillow decodes the JPEG. Hardware calls
+are stubbed in that test. The subsequent real reboot and owner observation
+establish the actual device result separately.
+
+Apply and rollback
+------------------
+The helper checks exact device identity, slot, known full-image hashes,
+partition bounds, native startup, unchanged init_boot and stock backup
+bootloaders. It saves a fresh full readback and both sector spans, then runs
+a detached on-TV transaction. A failed verification restores the previous
+span while Linux is still running. Power-loss recovery is not provided by
+that transaction. Full host readback must match before rebooting.
+
+  nix develop -c python3 tools/native-app/g13-unlock-logo.py apply --logo lean
+  nix develop -c python3 tools/native-app/g13-unlock-logo.py apply --logo tcl
+  nix develop -c python3 tools/native-app/g13-unlock-logo.py restore
+
+The first command installs Lean (and is a no-op if already installed);
+the second restores the tested TCL artwork; the third restores the original
+unlocked warning. None reboots automatically. After a verified write, use
+normal reboot with UART capture, then restore host services:
+
+  nix develop -c adb -s 192.168.77.3:5555 shell 'sync; setprop sys.powerctl reboot'
+  nix develop -c python3 tools/native-app/run-g13.py --network-only
+
+Do not relock, change AVB policy, flash a whole bootloader for this logo,
+touch MBOOT_b/MBOOTBAK, or substitute G06 firmware. Read RECOVERY_NOTES.txt
+before future boot-state changes. USB remains the verified Fastboot path;
+this write uses rooted Android ADB over Ethernet, not Ethernet Fastboot.
+
+Evidence
+--------
+assets/research/g13-unlock-warning-20261101/ holds original MBOOT/MPOOL
+readbacks, layout analysis, extracted artwork and the TCL candidate.
+  apply-20261101T191846442884Z/: TCL write, reboot and owner confirmation.
+  apply-20261101T192035747513Z/: Lean write, full pre/post-reboot readbacks,
+    unchanged-partition checks, root/network state and owner confirmation.
+assets/research/g13-lean-logo-20261101/ holds artwork source capture,
+source.json, rendered files, candidate-rgb/ and the UART starting offset.
+Builder manifests describe the offline preparation; their applied:false
+fields are historical. The apply directories record actual installations.

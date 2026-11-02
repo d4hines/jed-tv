@@ -1,0 +1,145 @@
+Multiplayer Doom checkpoint — 2026-10-31 / 2026-11-01 UTC
+Worktree /Users/d4hines/repos/dande-tv/agent1, branch d4hines/agent1.
+All changes UNCOMMITTED. No TV connection, boot-state change, flash or push.
+
+What is ready
+-------------
+Two instances of our Doom build can play private-LAN deathmatch using the
+original Chocolate Doom 2.2.1 network protocol over native UDP. No SDL_net,
+network GUI, Internet master service, DNS resolver or network worker thread
+was added. The host auto-launches when the second player joins.
+
+Configuration is one optional read-only file, /etc/doom-network:
+  host
+or:
+  join 192.168.88.1
+The address must be numeric IPv4. UDP port 2342 is fixed. No file means the
+ordinary solo game. A launcher/device image must configure the NIC before
+running Doom; this code does not change interface addresses or routes.
+
+Both peers should use the same FreeDM IWAD. When networking is configured,
+/doom/freedm.wad is preferred, otherwise the existing Freedoom1 paths remain
+available. Solo keeps its existing Freedoom1 preference. The original Doom
+argument mechanism remains intact; no new Doom CLI flags were introduced.
+
+Source changes
+--------------
+- Restored seven original network C modules (4,789 lines) plus their missing
+  headers from the OFFICIAL chocolate-doom-2.2.1 tag, source commit
+  2ddd290b8226e1d1f0c52e344e76150261a8c0c3. Existing net_defs.h matched this
+  release byte-for-byte. GPL notices preserved; whitespace normalized.
+  Source URL and exact adaptations are in src/third_party/doomgeneric/UPSTREAM.
+- Enabled FEATURE_MULTIPLAYER and restored original D_StartNetGame and
+  BlockUntilStart paths that doomgeneric had disabled via ORIGCODE.
+- Guarded obsolete dummy network globals, zero-initialized connect/settings
+  structs, adapted M_BindStringVariable to this tree's M_BindVariable API.
+- src/doomtv/native/doomtv_net.c: 165-line native POSIX UDP module plus a
+  minimal two-player waiting flow, master/query/dedicated-mode stubs, and
+  gameplay telemetry. Datagram size <=1500, address table bounded to64.
+  The socket is nonblocking and SOCK_CLOEXEC, so Doom re-exec does not leak
+  its bound socket into the next session. Startup waits at most30 seconds
+  for the second player. It refuses mismatched WAD directories.
+- NETSTATE once per35 game tics records a hash of both players' positions,
+  angles, health, ammo and commands. It is not a full world-state checksum.
+- tools/doom/build.sh compiles90 objects with networking. Its output may be
+  isolated with DOOM_BUILD_ROOT; default remains assets/build/doom/TARGET.
+- src/doomtv/build.rs requires NETWORK_FEATURE=chocolate-2.2.1-native-udp-v1
+  beside the native library. This prevents ordinary Cargo from silently
+  linking an obsolete solo-only library after these source changes.
+- tools/doom/check-multiplayer.py runs an ARM64/HVF host and ARM32/TCG
+  client over a loopback-only QEMU Ethernet socket link. It freezes each
+  executable into its evidence directory before hashing/packaging it,
+  injects movement and fire independently on both peers, compares state at
+  identical simulated tics, and captures both screens.
+- No shared test/run.py, test/check.py, platform, video or decoder source
+  was edited by this agent. Parent's current changes are preserved.
+
+FreeDM data
+-----------
+Official source:
+https://github.com/freedoom/freedoom/releases/download/v0.13.0/freedm-0.13.0.zip
+Downloaded to assets/third_party/freedoom/download/freedm-0.13.0.zip.
+ZIP SHA256 b420f13508ef745d7b38e83d15e55e0fc0b09d9a503c96741cddd9773d43f7c9
+matches the already-cached official freedoom-0.13.0-CHECKSUM. Its PGP signature
+was not independently verified. Extracted assets/third_party/freedoom/freedm.wad:
+22,218,796 bytes, SHA256
+d9adc4d792627e7fc47b09067b15486da724010c71dd12831e1cf8e0755b68ad.
+A separate freedm.SHA256SUMS records those identities. Game data remains in
+ignored assets; no copyrighted commercial IWAD was acquired or committed.
+
+Normal build/run commands (from agent1)
+--------------------------------------
+  tools/doom/build.sh
+  cd src
+  cargo build --release --target aarch64-unknown-linux-musl -p doomtv
+  cargo build --release --target armv7-unknown-linux-musleabihf -p doomtv
+  cd ..
+  python3 tools/doom/check-multiplayer.py
+Uses existing Zig/Rust/QEMU tools. No system installs are needed. Fresh
+checkouts must provision FreeDM as described above before the gate runs.
+
+Default native libraries and both regular Cargo outputs were rebuilt and
+are available, with NETWORK_FEATURE markers. Earlier isolated artifacts
+under assets/build/doom-multiplayer/{engine,target} are retained as evidence;
+the normal build artifacts are canonical now. Do not assume earlier isolated
+binaries include the final SOCK_CLOEXEC change.
+
+Validation and limits
+---------------------
+The cross-architecture FreeDM gate compares at least10 state samples and
+requires >=350 shared tics, zero divergences, different local player IDs,
+and actual movement/fire commands for BOTH players. It does not just count
+packets or detect a connection banner. The ARM32 guest uses root's existing
+G06 syscall-absence trampoline. Both FINAL guest screenshots were visually inspected: different viewpoints,
+correct deathmatch HUD, weapons, player motion and ammo consumption.
+
+Additional checks completed:
+- An earlier run with Freedoom1 reached tic630 with matching hashes on
+  ARM64 and ARM32, with independently injected movement/fire.
+- A modified FreeDM directory marker caused the joining guest to reject
+  with "IWAD directory mismatch" before gameplay. Evidence:
+  assets/build/doom-multiplayer/runs/1793497189822209000/.
+  Reproduction scratch script: assets/build/doom-multiplayer/check-mismatch.py.
+  The inherited protocol's SHA1 checks WAD DIRECTORY metadata, not every
+  payload byte. The gate's SHA256 records the actual identical IWAD file.
+- Ordinary SOLO Doom using NORMAL rebuilt artifacts entered deathmatch0,
+  player1of1 and rendered a level without creating the UDP module. Evidence:
+  assets/build/doom-multiplayer/solo.log and solo-runs/.
+- git diff --check passed for owned source/tool paths.
+
+Hardware/network limits: no TV or real LAN validation; no evidence yet for
+packet loss/long latency, reconnects, map changes, >2 players, Doom restart
+end-to-end, or interoperability with another source port/version. The fixed
+package version may matter for external Chocolate Doom clients. The native
+transport is plain private-LAN UDP, not an authenticated Internet service.
+The imported protocol is a C dependency; it has not been ported to Rust/Lean
+or fuzz-audited. The TV panel/audio/NIC initialization and actual performance
+remain the parent's separate hardware gates. No TV-ready claim is made.
+
+FINAL validation and artifact identities
+---------------------------------------
+Final normal-artifact gameplay run (includes SOCK_CLOEXEC):
+  assets/build/doom-multiplayer/runs/1793497374724433000/
+  result.json, host/{serial.log,screen.png,cmd.json,doomtv},
+  join/{serial.log,screen.png,cmd.json,doomtv}.
+PASS: 19 shared state samples, tics0 through630 inclusive, zero divergent
+samples; both player0 and player1 moved and fired. These samples span630
+simulated game tics (18 game seconds); no physical throughput claim.
+Both final screenshots were viewed. The gate freezes exact executables into
+its evidence directory, so later builds cannot change the tested identities.
+
+Final default release executables:
+  armv7-unknown-linux-musleabihf: 973,296 bytes
+    SHA256 b13fb3f67b13181c65f26a8b233cd4f417d7cafc3d3e6e243e2f40cd609581a7
+  aarch64-unknown-linux-musl: 1,097,128 bytes
+    SHA256 c684ed9820e49d210872c5deaf201dc1985b216e53aba55ca0b203b7c7561459
+Compared with the recorded existing solo artifacts, the final executables
+are +39,184 bytes ARM32 and +51,128 bytes ARM64. The original protocol was
+restored rather than replaced with an untested custom packet format.
+Current compiled native libraries are assets/build/doom/TARGET/
+libdoomgeneric.a, each with NETWORK_FEATURE. Both default Cargo builds pass.
+The ordinary solo check preceded only the final close-on-exec socket flag;
+solo does not instantiate that socket. No further source changes or tests
+are running from this agent. No unresolved build failure or partial generated
+source tree remains. No commits, hardware operations or live game-server
+contacts were made.

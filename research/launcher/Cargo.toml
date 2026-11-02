@@ -1,0 +1,28 @@
+[package]
+name = "tv-launcher"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+qemu-test = []
+
+[dependencies]
+libc = "=0.2.191"
+
+[[bin]]
+name = "tv-launcher"
+path = "src/main.rs"
+
+[[bin]]
+name = "launcher-probe"
+path = "src/probe.rs"
+required-features = ["qemu-test"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[workspace]

@@ -1,0 +1,4 @@
+[build]
+target = "aarch64-unknown-none"
+# Build outputs live in the ignored assets tree (assets -> main/assets).
+target-dir = "../../../assets/build/baremetal/target"

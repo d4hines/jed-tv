@@ -1,0 +1,265 @@
+G13 default Lean boot and three-start escape
+==========================================
+Target: TCL G13 / V013 / 18ACC22D1C47 / slot a.
+Current network-enabled revision and validation:
+  research/G13_SIGNED_NETWORK_BOOT.txt
+The three-start policy and journal layout below are unchanged. The installed
+network gate uses a v4 compressed container, adding an authenticated temporary
+execution window only on Lean starts. It remains in the 128 KiB kernel prefix.
+
+Original installation (before the Ethernet window)
+--------------------------------------------------
+Status at that checkpoint: installed; four automatic restarts verified.
+
+Installed boot_a SHA256:
+  516d9306c93c34b8c1b788e0b3b0310735c3a7b638fe4f154a1ea7d9618edb7e
+Only bytes 4096..135167 (128 KiB) were written. Full-partition readback matched.
+The installer preserved the Android header, all remaining kernel/partition
+bytes, MBOOT, boot_b, init_boot_a, vendor_boot_a and vbmeta. The two journal
+sectors were reinitialized to sequence 0/state 0 after restoring upgrade's
+temporary staging area. Evidence: installed/install.json.
+
+Installed-image verification
+----------------------------
+Four ordinary adb reboots passed, with the installed Lean image retained
+throughout. UART, fresh boot IDs, CRC-checked journal records, ro.boot.leanboot,
+Ethernet 192.168.77.3/24 and the complete boot_a hash agreed after each start:
+
+  restart  path          journal seq/state  reboot-to-READY  Linux-to-READY
+  1        Lean          1 / 1              34.10 s          18.90 s
+  2        Lean          2 / 2              32.69 s          18.78 s
+  3        stock inputs  3 / 4              26.76 s          18.96 s
+  4        Lean          4 / 1              33.01 s          18.90 s
+
+Reboot-to-READY includes shutdown, MBOOT, the gate and Linux startup. These
+measurements show about 6-7 s additional startup time on the Lean preparation
+path versus the third-start fallback; no boot-speed improvement is claimed.
+READY means submitted Home frames, an audio listener and available IR input;
+no new physical picture/audio confirmation was requested in this sequence.
+The final boot ID is 32c6efea-11fb-4c66-afd4-024a9be8ce59. The journal remains
+at sequence 4/state 1, so the next full start is Lean and the one after uses
+stock inputs. The host media proxy/replay connections were restored afterward.
+Final checks confirmed root Ethernet ADB, native Home/display/audio processes,
+Wi-Fi on Lean Router at 192.168.4.11, global SELinux Enforcing, secure ADB, and
+unchanged MBOOT/MBOOT_b/boot_b/init_boot_a/vendor_boot_a full-partition hashes.
+Wi-Fi completed DHCP after Home readiness; it does not gate the launcher.
+This verifies clean full restarts, not power interruption during a sector write.
+
+The native startup script now includes bootloader=Lean or bootloader=MBOOT
+in DANDE_BOOT's READY message, using ro.boot.leanboot from this boot's kernel
+configuration. MBOOT denotes the original-input path, including the third-start
+fallback. An unexpected property value or failed query reports unknown.
+
+Evidence: assets/research/g13-leanboot-default/installed/verify/results.json,
+boot-1.bin through boot-4.bin and journal-1.bin through journal-4.bin.
+The final partition/security/network snapshot is installed/final-state.json
+and installed/final-state.txt under that same experiment directory.
+installed/verified-build.zip retains the installed image, gate ELF/binary and
+source snapshot; installed/verified-build.json records their hashes. The only
+runtime-source change after compilation was a BootGate comment correction.
+
+Owner's selected policy
+-----------------------
+Count full starts even after successful Home startup. The practical event is
+entry into the kernel boot image, including adb reboot and a full start from
+standby. This board also reports software resets as AC_ON, so that register
+cannot reliably distinguish unplugging from a software restart.
+
+From a newly initialized journal:
+  start 1: Lean preparation
+  start 2: Lean preparation
+  start 3: original MBOOT preparation
+  start 4: Lean preparation; repeat the three-start sequence
+
+Home success never resets the count. A resume that does not start a fresh
+kernel does not increment it. The escape is one start, not a persistent mode.
+Each start counts when its journal commit completes. For a deliberate escape,
+wait for LEANBOOT choice on UART before cutting power again; unplugging before
+the selector reaches storage cannot be counted. A cut during the journal write
+can leave the previous valid record, so it is not guaranteed to count that cut.
+Here "original" means the original kernel and MBOOT-prepared FDT/initrd, with
+the same installed native Home, applications and network configuration. It
+does not switch to slot b or restore the Google TV framework.
+
+Implementation (current v4 container)
+-------------------------------------
+Of the boot images, only boot_a changes. Its Android v4 header, kernel-size field,
+partition size and AVB metadata remain the original sizes. Only the first
+128 KiB of the kernel field changes: a 3660-byte initial Lean stage, a
+compressed 125008-byte network gate, a compressed copy of the original kernel
+prefix and compact metadata fit there. The original prefix
+compresses to about 1.3 KiB; the rest of the kernel remains byte-identical. Vendor and
+generic ramdisk bytes come from the ordinary MBOOT load, rather than being
+duplicated in the bundle. Their integrity is checked before Lean uses them.
+The metadata reconstructs the required original image sections, and the existing
+Os.withPrepared core performs the Lean FDT/ramdisk/bootconfig preparation.
+
+The first three ARM instructions, emitted by the existing Lean ARM DSL, set a
+private stack and branch into Lean Stage0. It validates and expands the gate
+to 26000000; the relocated entry is one ARM branch at offset zero. The 128 KiB
+bundle prefix is preserved at 40000000 before the original prefix is restored
+over the entry image. The v4 80-byte manifest is at 40002000; the compressed
+gate starts at offset 0x3000 and metadata expands to 40020000. Length and
+corruption checks precede decompression. These are not secure-boot signatures.
+The full reconstructed kernel is checked before either boot path is used.
+Logic, decompression, validation, copying, journal codec and policy are Lean
+compiled to C and ARM. Unsafe memory, CPU, UART and block calls remain colored
+by MemoryM/HardwareM and centralized under Unsafe.
+
+MBOOT still initializes DRAM, secure firmware, panel and storage and loads the
+boot images. The default entry is its normal kernel handoff. No executable
+MBOOT patch, environment hook, boot0 change, slot change or vbmeta change is
+needed. The pre-existing Lean logo in MBOOT is preserved.
+
+The stock-path fallback retains the original FDT and initrd. The larger Lean
+preparation only starts after a counter update has been read back. Its initrd
+and FDT workspaces are backed up; a returned preparation error restores the MBOOT inputs
+and jumps through the stock path. Recovery/missing normal-boot metadata skips
+the counter and Lean preparation. Invalid payload metadata selects stock where
+the original kernel is intact; damage to the indispensable gate/kernel may
+still require UART recovery. No software scheme can promise an unbrickable TV.
+
+Counter storage
+---------------
+Two 512-byte records occupy upgrade's last two sectors:
+  absolute LBA 3217fe and 3217ff
+  offset 031ffc00 within the 50 MiB upgrade partition
+Each record has magic/version, sequence, state, complemented fields and CRC32.
+The inactive record is written and read back before proceeding. Inconsistent
+or unreadable records and write/readback failure select stock. Both invalid
+records remain in stock mode until reseeded; no invalid state is auto-erased.
+The initial pair is sequence 0/state 0. A normal record sequence wraps at 32 bits.
+
+The block bootstrap retains MBOOT's initialized card, timing and pads, but
+executes its own bounded FCIE/DMA command logic in Lean. It calls no MBOOT
+function. Before CMD24, a fresh CMD8 checks that the card uses its normal user
+partition, 512-byte sectors and a disabled write cache. Writes are restricted
+to the two journal LBAs. This is not an eMMC driver that initializes from reset.
+An OTA that overwrites upgrade may invalidate the journal and select stock.
+
+Recovery and retained state
+---------------------------
+Read RECOVERY_NOTES.txt and the current G13 notes before any write. The proven
+recovery remains UART -> MBOOT -> mstar_usb -> exact USB Fastboot restore.
+It does not depend on a working boot_a. MBOOT, MBOOT_b, boot0, boot_b, init_boot_a,
+vendor_boot_a, dtbo and vbmeta are preserved. No full OS exists in slot b;
+never use slot switching as a substitute for the documented recovery.
+
+Fresh, host/readback-matching pre-work boot_a and upgrade backups and hashes:
+  assets/research/g13-leanboot-default/before/
+Original boot_a SHA256:
+  dc3154fd0767fcb6a40080798b154ada3cd38c3887f444b20eaf80d8cf27ab43
+Original upgrade SHA256:
+  f34226002a8752504c4861680d711a63f72176b601dc29d9ccb69e23c9d4bd3b
+
+Validation and build
+--------------------
+  nix develop .#bootloader -c python3 tools/bootloader/build.py
+  nix develop .#bootloader -c python3 tools/bootloader/build-boot-image.py
+  nix develop .#bootloader -c python3 tools/bootloader/check-boot-policy.py
+  nix develop .#bootloader -c python3 tools/bootloader/check-lz4.py
+  nix develop .#bootloader -c python3 tools/bootloader/check-boot-gate.py
+
+The policy suite executes compiled ARM: 601 cases, all 513 torn-sector prefix
+lengths, sequence wrap, read/write errors, inconsistent copies and recovery.
+The LZ4 suite compares compiled ARM against host-compressed fixtures and
+checks malformed/truncated inputs and output bounds (434 cases).
+The full-gate model checks Lean preparation, third-start stock, recovery
+bypass and corrupt optional metadata, including preservation of stock initrd.
+Models do not establish real controller behavior or power-loss guarantees.
+
+  nix develop .#bootloader -c python3 tools/bootloader/check-emmc.py
+The register model additionally checks bounded CRC/timeout returns, exact DMA
+addresses and lengths, and refusal to write under incompatible card settings.
+
+A read-only sector probe passed both at the MBOOT prompt and after its final
+Linux CPU handoff. The latter continued through the stock kernel to native
+READY at 19.52 s. No counter write was part of those probes.
+
+RAM experiments keep Screen 96550 as the sole UART owner. The unchanged image
+body is read from boot_a to 40000000, and the new prefix is uploaded with LZ4
+over UART. The whole image is CRC-checked before execution. One temporary
+MBOOT RAM instruction changes only the bootm source. It disappears on reset.
+The runner is tools/bootloader/boot-image-tv.py and requires an existing prompt.
+It does not flash, reset, save environment or change slots.
+
+Earlier rejected staging trials (no boot_a flash):
+- upgrade's first sectors changed across a full restart; a full-image CRC
+  caught this before execution. Keep test images beyond the first MiB.
+- loading the oversized candidate from 21400000 overlapped the kernel output;
+  MBOOT rejected it and reset. Normal native Home returned at READY 18.79 s.
+- the oversized format would also exceed the original AVB descriptor's read
+  size. The compact format keeps that size and avoids changing vbmeta.
+
+Exact entry ABI clarification
+-----------------------------
+V013's final transfer sets r2 to a stack-resident legacy tag list, not the FDT.
+The original kernel and MBOOT use the finalized FDT at physical 23000000.
+The selector preserves the original r2 for stock boot and inspects 23000000
+for normal/recovery selection. Before Lean edits that tree, it preserves
+64 KiB at 26410000; a returned preparation failure restores both this FDT
+and the original initrd. The model now supplies the real legacy-tag ABI and
+checks byte-for-byte rollback after an invalid FDT recipe.
+
+Earlier CIFD hardware failure: not installed
+------------------------------------------
+The compact-lean-abi RAM trial reached LEANBOOT GATE and attempted the first
+journal read at LBA 3217fe. The resident MBOOT CIFD routine then timed out,
+dumped controller state and entered eMMC_FCIE_ErrHandler_Stop (line 302).
+No choice marker or Linux READY followed. The runner recorded ready=false;
+boot_a was still the original stock image at that point. Evidence:
+  assets/research/g13-leanboot-default/compact-lean-abi/
+
+The earlier isolated read probes therefore do NOT establish that this routine
+is usable in the complete selector context. Its fatal error handler prevented
+our fallback logic from regaining control, so that candidate was rejected.
+The bounded DMA replacement below resolved this blocker before installation.
+The user was asked to
+power-cycle to discard this RAM-only execution. The power cycle restored normal
+Home at READY +18.74s; root Ethernet ADB and the stock boot_a hash were checked.
+Temporary upgrade staging was then restored and verified against the backup,
+preserving only the two initialized journal sectors (staging-cleanup/).
+
+Bounded DMA replacement and successful RAM boot
+---------------------------------------------
+An initial direct Lean CIFD implementation reproduced a CRC error but returned
+to the MBOOT prompt. The first 64 bytes matched, while bytes after the first
+FIFO chunk were corrupt. Replacing CIFD with the ordinary single-sector DMA
+path produced an exact 512-byte match with MBOOT's independent read, status 0.
+The former six assembly instructions for resident read/write calls are removed;
+the audit at that checkpoint reported 24 private FFI declarations and 132 ARM
+instructions. Signed network boot later added two crypto FFI declarations and
+one call bridge (14 instructions), for current totals of 27 and 146.
+Evidence: bounded-io/read-test.json and bounded-io/cifd-failure/.
+The following journal trial advanced sequence 0/state 0 to sequence 1/state 1;
+independent MBOOT readback verified the new record and unchanged other copy.
+Evidence: bounded-io/journal-test.json and journal-before/after.bin.
+
+The complete compact-lean-dma RAM trial then committed sequence 2/state 2,
+printed LEANBOOT OS prep and LEANBOOT Linux, and reached native READY +19.30s.
+Wall time from bootKL to READY was 26.67s. Root ADB independently confirmed
+ro.boot.leanboot=1, the journal records, Ethernet 192.168.77.3 and the still-stock
+boot_a hash before installation. The pre-Linux preparation adds about 7s in
+this trial; this is not yet a startup-speed improvement.
+
+Installation and verification tools
+----------------------------------
+  nix develop -c python3 tools/bootloader/install-boot-image.py --apply
+  nix develop -c python3 tools/bootloader/verify-default-tv.py
+
+The installer requires the exact matching successful compact-lean-dma RAM
+result and verifies the original target hashes before writing. The verifier
+requires a fresh sequence-zero journal and performs four ordinary reboots;
+it checks UART path/READY, boot IDs, journal CRCs and sequence, the Lean boot
+property, Ethernet address and the installed boot_a hash after every restart.
+It stops on the first mismatch.
+
+UART rollback, only at an existing verified MBOOT prompt:
+  nix develop .#bootloader -c python3 tools/bootloader/restore-boot-image.py
+  nix develop .#bootloader -c python3 tools/bootloader/restore-boot-image.py --apply
+
+The first command only loads and CRC-checks boot_b as the exact original
+boot image. That read-only check passed. The second restores boot_a from
+those verified bytes without changing slots, then verifies the readback.
+The write rollback has not been exercised. The verified stock host backup
+and the earlier proven UART-to-USB-Fastboot recovery path remain available.

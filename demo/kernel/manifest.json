@@ -1,0 +1,16 @@
+{
+  "version": "6.18.57",
+  "machine": "virt-11.1",
+  "sha256": "996d7306ab2e13e61c37636903378c3ce37caaa9e7605e640693015f1995784d",
+  "upstream": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.57.tar.xz",
+  "configuration": "config",
+  "rebuild": "tools/kernel/build.sh arm OUTDIR",
+  "purpose": "Generic virtio graphical surrogate, not the G06 dumped kernel",
+  "required_features": [
+    "MULTIUSER",
+    "UNIX",
+    "SECCOMP_FILTER",
+    "NAMESPACES",
+    "FILE_LOCKING"
+  ]
+}

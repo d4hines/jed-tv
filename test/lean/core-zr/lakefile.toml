@@ -1,0 +1,10 @@
+name = "CoreZrTest"
+buildDir = "../../../assets/build/lake/core-zr"
+defaultTargets = ["CoreZr"]
+
+[[require]]
+name = "tv"
+path = "../../../src/pid1/lean"
+
+[[lean_lib]]
+name = "CoreZr"

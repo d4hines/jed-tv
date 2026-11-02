@@ -1,0 +1,13 @@
+[package]
+name = "cold-plan-check"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+mi-bootstrap = { path = "../../src/pid1/mi-bootstrap" }
+
+[build-dependencies]
+cc = "1"
+
+[workspace]

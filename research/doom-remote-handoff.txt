@@ -1,0 +1,56 @@
+Doom remote audit (offline)
+===========================
+Outcome: likely usable for basic movement/menu navigation, but not yet proven
+playable on the physical handset. No TV contact, boot changes, or ADB used.
+
+Fixed one concrete mismatch in ../agent1/src/doomtv/src/keys.rs:
+V109's Vendor_3697_Product_0001.kl maps DPAD_CENTER/OK to EV_KEY 28.
+Doom previously mapped 28 to Enter only, so OK could start a game but not
+fire. It now emits Enter + Fire, like the existing KEY_OK/SELECT aliases.
+Added a regression for the firmware-layout controls; both standalone keymap
+tests pass. Existing keyboard test was updated for the intentional Enter
+behavior change. Native engine/runner/kernel files are untouched.
+
+Mapping supported by firmware layout (not physical button-event capture):
+  arrows 103/108/105/106 -> forward/back/turn left/right
+  OK 28 -> menu Enter / gameplay fire
+  Back 158, Menu 139, Exit 174 -> Escape / game menu
+  Play/Pause 164 or Green 399 -> Use (doors, switches)
+  Yellow 400 -> Run; Blue 401 -> automap
+  number keys 2..11 -> weapon selection
+  Home 102/172 -> parent tvinit Home handling, returns to launcher
+
+Important limits before calling this hardware-ready:
+1. Captured getevent output lists supported keys; it is NOT a recording of
+   actual presses. Layout evidence does not prove this handset has every
+   listed button. Verify Play/Pause or Green exists, otherwise add an
+   accessible Use binding. A five-way pad alone currently cannot open doors.
+2. The input layer forwards press=1, repeat=2, release=0. Doom treats 1/2 as
+   down and 0 as up. Movement/fire stop only on release. Capture real hold /
+   release timing and check for stuck movement or lost releases.
+3. Do not assume the IR remote supports chords. Movement + turn + fire/run
+   may be impossible concurrently. This affects playability, not mapping.
+4. Doom's yes/no confirmations still default to Y/N, not Enter/Back. Remote
+   cannot confirm Quit/End Game through that dialog with current mappings.
+   Home returning to tvinit remains the escape route when run as its child.
+   A later fix should make prompt confirmation contextual, avoiding a global
+   Y mapping which would accidentally confirm a dialog on the same OK press.
+5. Save-name entry remains keyboard oriented. No claim of full remote UX.
+6. Built-in MStar IR + evdev is available in the stock kernel, but cold init,
+   device permissions, and actual event stream remain hardware gates.
+
+Verification:
+  SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk \
+    rustc -C linker=/Library/Developer/CommandLineTools/usr/bin/clang \
+    --test ../agent1/src/doomtv/src/keys.rs \
+    -o assets/build/doom-remote/keys-test
+  assets/build/doom-remote/keys-test
+  Result: 2 passed. This tests key mapping, not physical IR or gameplay.
+No release binaries were rebuilt; next normal Doom build picks up the fix.
+
+Evidence:
+  assets/research/tv-pid1/v109/keylayout/Vendor_3697_Product_0001.kl
+  assets/research/g06-capabilities-20261031/survey-userspace.txt
+  ../agent1/src/platform/src/input.rs, remote.rs
+  ../agent1/src/doomtv/src/keys.rs, lib.rs, main.rs
+  ../agent1/src/third_party/doomgeneric/m_controls.c, m_menu.c

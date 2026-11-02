@@ -1,0 +1,17 @@
+[package]
+build = "../../../tools/tvinit/build.rs"
+workspace = "../.."
+name = "tvinit"
+links = "dande_lean_runtime"
+version = "0.1.0"
+edition = "2021"
+description = "PID 1 launcher: menu on fbdev, remote keys via evdev, runs each app as its own process"
+
+[dependencies]
+libc = "0.2"
+platform = { path = "../../platform" }
+g06-display = { path = "../display" }
+font8x8 = { version = "0.3", default-features = false }
+
+[build-dependencies]
+cc = "1"

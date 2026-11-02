@@ -1,0 +1,10 @@
+# Doom II: text screens after MAP06/11/20, secret MAP15->31->32->16, MAP30 cast
+m05_06 1 5 2 1000 0 4000 21 300:n,1200:n,2200:n
+m10_11 1 10 3 1000 0 3000 22 300:n,1200:n
+m15_secret 1 15 2 1000 0 5000 23 300:s,1200:s,2100:n,3000:n
+m31_normal 1 31 3 1000 0 3000 24 300:n,1200:n
+m20_text 1 20 2 1000 0 3000 25 300:n
+# Random input keeps restarting the cast (a real-time wipe each time in the
+# oracle), so this stays short; scripts/brain.sh runs the full cast.
+m30_cast 1 30 2 1000 0 800 26 300:n
+coop_m06 1 6 2 1100 0 3000 27 300:n,1500:n

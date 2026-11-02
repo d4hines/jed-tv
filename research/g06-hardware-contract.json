@@ -1,0 +1,158 @@
+{
+  "schema": 1,
+  "issue": "https://github.com/d4hines/dande-tv/issues/11",
+  "target": {
+    "serial": "4C0490290FA05A0C0",
+    "device": "G06",
+    "firmware": "V8-T221T04-LF1V109",
+    "kernel_sha256": "01e36bda0554aed46ad3aa1d7fdf688174f46241117f62b4b95f02e25c47c11e"
+  },
+  "scope": "Observed physical behavior for future emulator work; this file does not implement device emulation.",
+  "native_runtime": {
+    "pid1": "our Rust supervisor",
+    "root_pty": true,
+    "http_port": 8765,
+    "pty_port": 8766,
+    "host_ipv4": "192.168.77.1",
+    "tv_ipv4": "192.168.77.2",
+    "independent_90_second_passes": 2,
+    "uploads_and_child_execution": true,
+    "firmware_flash_required_per_iteration": false,
+    "dns_tls_sustained_throughput_verified": false
+  },
+  "watchdog": {
+    "devmem_available": false,
+    "riu_physical_base": 520093696,
+    "clear_offset": 24576,
+    "clear_access_bytes": 1,
+    "clear_value": 1,
+    "utopia_path": "/proc/utopia",
+    "module_id": 64,
+    "open_ioctl": 3222033665,
+    "command_ioctl": 3221771523,
+    "init_command": 0,
+    "clear_command": 2,
+    "feed_period_seconds": 2,
+    "hal_start_writes_hardware": false,
+    "expiration_period_measured": false,
+    "standby_or_reset_model_verified": false
+  },
+  "display": {
+    "boot_fb": {
+      "path": "/dev/fb0",
+      "width": 1920,
+      "height": 1080,
+      "stride": 7680,
+      "bpp": 32,
+      "pages": 1
+    },
+    "mi_fb": {
+      "path": "/dev/fb1",
+      "width": 1280,
+      "height": 720,
+      "stride": 5120,
+      "bpp": 32,
+      "pages": 2,
+      "allocated_bytes": 7372800,
+      "observed_iovas": [
+        8589934592,
+        8612102144,
+        8619491328
+      ]
+    },
+    "init_and_dma_mapping_succeeded": true,
+    "physical_hello_visible": false,
+    "legacy_smem_start_truncates_64_bit_iova": true,
+    "legacy_mmap_at_first_iova_errno": 12,
+    "mma_import_positive_fd_is_success": true,
+    "dma_mapping": "export existing allocation via MMA; mmap the returned fd uncached; retain fbdev fd for pan",
+    "sys_ready_selectors": [
+      40,
+      6,
+      9,
+      1
+    ],
+    "sys_ready_requires_real_init": true,
+    "mi_ioctl_outer": {
+      "bytes": 16,
+      "size_field_offset": 0,
+      "size_field_bytes": 2,
+      "argument_pointer_offset": 8,
+      "argument_pointer_bytes": 8
+    }
+  },
+  "vendor_dependencies": {
+    "observed_tee_absent_failure": "midaemon blocked in optee_supp_thrd_req",
+    "tee_supplicant_releases_initial_wait": true,
+    "binderfs_devices": [
+      "binder",
+      "hwbinder",
+      "vndbinder"
+    ],
+    "vendor_manager_command": [
+      "/vendor/bin/vndservicemanager",
+      "/dev/vndbinder"
+    ],
+    "selinux_status_fs_needed_by_stock_manager": true,
+    "policy_class_definitions_needed_by_stock_managers": true,
+    "missing_property_observation": "composer selected fallback HWC2OnFbAdapter and exited after missing function 54",
+    "stock_runtime_still_incomplete": true,
+    "hardware_properties_missing": true,
+    "hardware_property_candidate": "ro.hardware=mt5867",
+    "candidate_value_verified_live": false
+  },
+  "entropy": {
+    "native_crng_ready_kernel_uptime_seconds": 120.412019,
+    "getrandom_readiness_directly_tested": false,
+    "immediate_readiness_may_not_be_assumed": true
+  },
+  "recommended_model_priorities": [
+    "Model fbdev/MMA as explicit failure and success states including 64-bit IOVA and positive fd returns.",
+    "Record watchdog service writes; do not invent an expiration interval from the 90-second survival test.",
+    "Use the actual serial/IP/port/native-PTY checks as the Ethernet milestone before DNS or playback tests.",
+    "Keep TEE, Binder manager, property and policy prerequisites explicit; do not equate driver load with service readiness.",
+    "Test early not-ready and later ready entropy separately; retain physical timing evidence as an observation, not a specification."
+  ],
+  "evidence": [
+    {
+      "path": "assets/research/pid1-repl/20261101T034148Z/result.json",
+      "sha256": "e086eb6e81e92968ddf9afe7bd696bbcb97e814212c5a61a522d2ce3dc29306a"
+    },
+    {
+      "path": "assets/research/pid1-repl/20261101T034148Z/console.log",
+      "sha256": "572a4a3f4a88177b55d81cbd8d05c78f2b1b14628afb750100ef2ff2fb9b9c25"
+    },
+    {
+      "path": "assets/research/pid1-repl/20261101T034148Z/events.log",
+      "sha256": "f008759aa350ff29c9247115942540ad3ed60329cd8e5bc917f844e190c6d4f5"
+    },
+    {
+      "path": "assets/research/pid1-repl/20261101T034148Z/live-job-control.txt",
+      "sha256": "fa5fa2ba472501c3adcecb162da20a1f58704fdbfedc400f4ee6da1039b43283"
+    },
+    {
+      "path": "assets/research/pid1-repl/20261101T035502Z/result.json",
+      "sha256": "e086eb6e81e92968ddf9afe7bd696bbcb97e814212c5a61a522d2ce3dc29306a"
+    },
+    {
+      "path": "assets/research/pid1-graphics/first-helper/mma-import-console.log",
+      "sha256": "755859c93f5336a8afdc63969602862dcefbd6d8d4556b74a6855dde70555825"
+    },
+    {
+      "path": "assets/research/pid1-graphics/first-helper/boot-fb-console.log",
+      "sha256": "f4fc16bcfc63a80ea5e1f7d0f8eca2864833a08693b6d15202eb1d6e1e45558f"
+    },
+    {
+      "path": "assets/research/pid1-graphics/first-helper/before-android-kernel.log",
+      "sha256": "1caaa4c6f8898d1b91818c923f1b5cdd3937be113844a6a8bbc9f5ae914af529"
+    },
+    {
+      "path": "assets/build/pid1-repl/watchdog-check.json",
+      "sha256": "8b675f990cf2f4f998d5080fa41916ed17e8bccda908c582dabf29d220f2d727"
+    },
+    {
+      "path": "assets/research/native-vendor-stack/midaemon-vendor-context.log",
+      "sha256": "891601362688332c9a0e196466c9ed12a13016ff62007afa3cedbb0c0b5f555e"
+    }
+  ]
+}

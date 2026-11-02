@@ -1,0 +1,5 @@
+name = "Gpu"
+defaultTargets = ["Gpu"]
+
+[[lean_lib]]
+name = "Gpu"

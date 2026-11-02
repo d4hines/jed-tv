@@ -1,0 +1,31 @@
+name = "TlsTest"
+defaultTargets = ["TlsTest", "transcript"]
+
+# Only the Yt sources this test needs are compiled, here, as a local library
+# rooted at src/lean/yt (not all of Yt as a [[require]]d package).
+[[lean_lib]]
+name = "YtSrc"
+srcDir = "../../../../src/lean/yt"
+globs = ["Yt.Crypto.+", "Yt.X509.+", "Yt.Tls.+"]
+
+[[lean_lib]]
+name = "TlsTest"
+
+[[lean_exe]]
+name = "transcript"
+root = "Main"
+
+# Host-only driver over real sockets (openssl interop, live hosts).
+[[lean_exe]]
+name = "tlsprobe"
+root = "Probe"
+
+# Host-only: tlsprobe against openssl s_server, every suite and failure (Interop.lean).
+[[lean_exe]]
+name = "tlsinterop"
+root = "Interop"
+
+# Host-only micro-benchmarks.
+[[lean_exe]]
+name = "tlsbench"
+root = "Bench"

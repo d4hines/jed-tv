@@ -1,0 +1,19 @@
+[package]
+name = "nolibc-rt"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "A C library for static Linux programs, written in Rust and assembly: exactly the libc symbols Rust's std and our crates import"
+
+[lib]
+name = "nolibc_rt"
+crate-type = ["staticlib"]
+
+[dependencies]
+# C ABI types and constants only (musl layout, i.e. what std was built against).
+libc = { version = "0.2", default-features = false }
+# malloc: Doug Lea's allocator, ported to Rust (the allocator of std on wasm).
+# We supply its page source (mmap) and its lock.
+dlmalloc = { version = "0.2", default-features = false }
+# powf etc. (slides' text layout): musl's libm, ported to Rust.
+libm = "0.2"

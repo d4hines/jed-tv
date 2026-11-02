@@ -1,0 +1,45 @@
+G13 V013 raw read offset width, checked 2026-10-31
+
+The installed HAL's a_mtktvfapi_sys_read_file takes an unsigned long long
+offset. The caller and both wrappers preserve the 64-bit value in ARM r2/r3;
+the seek origin is the next stack argument. The final call is fseeko64.
+
+Installed /vendor/lib/vendor.mediatek.tv.mtktvfactory@1.0-imp.so
+(saved under assets/research/new-tv-20261031T183329Z/artifacts/):
+  _Z25a_mtktvfapi_sys_read_filePKhPhjyPj at Thumb 0x25d89.
+  0x25d92 loads the two offset words from the incoming stack.
+  0x25dfe / 0x25e00 move them to r2/r3.
+  0x25e02 stores SEEK_SET (0) on the stack.
+  0x25e06 calls PLT 0x3c170 -> MI_FS_Fseek.
+  0x25e0a permits reading only when the seek result is zero.
+  0x25e80 calls PLT 0x3c050 -> MI_FS_Fread.
+
+Installed /vendor/lib/libmi3.so:
+  MI_FS_Fseek at Thumb 0x43ef1 preserves both offset words.
+  0x43f20 calls PLT 0xae820 -> MsFS_Fseek.
+
+Installed /vendor/lib/libutopia.so:
+  MsFS_Fseek at ARM 0xc831c8 preserves the arguments and tail-calls
+  PLT 0x10646f0 -> fseeko64 at 0xc831d0.
+
+PLT mapping for these ELF files is .plt address + 32 + relocation_index * 16.
+It was checked against the actual ARM instruction sequence and GOT relocation
+addresses. The preliminary 12-byte-entry formula printed during exploration
+was wrong and must not be used. The saved native disassembly is evidence of
+instructions, not a substitute for checking relocation names.
+
+This resolves the specific concern that ARM32 libc fseek/off_t might truncate
+offsets above 2 GiB. It does not establish atomicity of an online capture.
+Seek errors, HAL failures and short reads are also rejected by the helper.
+
+Evidence: hal-read-file-disassembly.txt, mi-fs-disassembly.txt,
+ms-fs-disassembly.txt, and the actual pulled libraries under
+../../assets/research/new-tv-20261031T183329Z/artifacts.
+
+SHA256 values matched between live ADB file hashing and host files:
+  mtktvfactory-imp.so
+    ba63dfc405c3b6bfce3e959034f9f2f9e4963116aa8255a7535864982b65382c
+  libmi3.so
+    0a7b5e42aeaa5feaee223ad3d98a4c1207056a76910471223227a6039792191c
+  libutopia.so
+    5a76f4203918d7aedb9c3aa2d0c39714f2c519a162058f4df03f6571df62268b

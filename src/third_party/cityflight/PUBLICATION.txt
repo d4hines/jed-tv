@@ -1,0 +1,17 @@
+Public redistribution permission — 2026-11-01
+===========================================
+
+The repository owner confirmed in this review that the City Flight author
+has authorized public redistribution of the imported code. This supersedes
+the historical README.txt statement limiting the import to the hackathon.
+The imported revision remains c8f5e9873b1bd487b6af6c16b77875b196f42a91.
+
+The reported permission allows inclusion in this public source snapshot; it
+is not recorded here as an unrestricted license to sublicense, modify, or
+sell every component. Preserve any additional terms in the author's grant.
+No MIT/Apache/GPL license for the author's original additions is invented by
+this notice. Agree explicit downstream reuse terms with the author if needed.
+
+JsbExact also derives from JSBSim. See JSBSIM_NOTICES.txt for upstream library
+copyright/License attribution and the C172 aircraft model's no-sale notice.
+The author of the port cannot waive third-party rights in its inputs.

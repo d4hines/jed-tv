@@ -1,0 +1,537 @@
+Trusted bootloader boundary
+===========================
+
+All authored assembly is in tools/bootloader/Unsafe/Arm.lean, expressed with
+the ZrAsm AST vendored under tools/bootloader/vendor. These are host-side
+generators; runtime extern declarations are private in Unsafe/Primitives.lean,
+Unsafe/UpdateCrypto.lean and Unsafe/Network.lean. The original G13 targets use no handwritten C or
+allocator. Signed updates and network boot add the small C/crypto boundary
+documented below. The boot-image selector uses its own bounded FCIE/DMA
+journal driver; it does not call MBOOT block routines. OS preparation and
+Ethernet likewise execute independently of MBOOT routines after entry.
+Lean compiles through C to scalar ARM functions. The G13 entry supplies a
+private stack and calls Lean; the QEMU reset entry supplies its first stack
+and branches to Lean.
+
+The generated boundary-audit.json records the current instruction count,
+including address materialization, returns, QEMU and RAM-probe entry stubs.
+No parsing, copying, polling, cache
+iteration, MMIO sequencing or boot policy is implemented in assembly.
+See boundary-audit.json for the
+exact per-routine machine instruction allowlist; these are regression checks,
+not formal proofs of the compiler, ARM model or physical memory ownership.
+
+Effect colors and deterministic core
+------------------------------------
+Unsafe/Effects.lean defines MemoryM and HardwareM. Every raw BaseIO foreign
+declaration is private in the reviewed boundary modules listed above; its
+wrapper is colored.
+Physical RAM operations use MemoryM. MMIO, CPU state, cache maintenance, UART,
+secure calls and terminal transitions use HardwareM. There is an explicit
+liftMemory into HardwareM and no implicit conversion between these colors.
+runMemory/runHardware are explicit outer-boundary escape points to BaseIO.
+The Permission proposition distinguishes types; it is not evidence of RAM
+ownership, privilege or safety. It is publicly constructible and erased.
+These types prevent accidental mixing, not deliberate bypass by trusted code.
+
+Flow.lean supplies the small ordered authentication/execution/install/journal
+machines used by the real interpreters. Its proofs require successful stage
+observations; adapters must establish their meaning. In particular, successful
+flush means durable data and successful preparation means the documented CPU
+and memory contract. These are not facts manufactured by the state types.
+See ../VERIFICATION.txt for the proof map and remaining refinement obligations.
+
+MemoryAccess.Reader/Writer are separate capabilities, with physical instances
+only in Unsafe/Ram.lean. Memory, Images, Fdt, Bootconfig, VerifiedBoot and Os
+are generic over them and have no physical effects instance or hardware import.
+Os.inspect requires only Reader. Plan.lean is pure value-level validation and
+layout selection. Os.withPrepared then applies a validated plan and invokes
+its KernelConfig callback exactly once on success; errors skip that callback.
+The callback is specialized away, not stored or dispatched indirectly.
+KernelConfig contains entry, FDT, initrd address/size and secure-message address.
+The board driver alone chooses whether to send the secure message and jump.
+
+The same core runs under a pure ReaderT/StateM test interpreter. Physical
+specializations keep bounded scalar loops without heap allocation. The build
+rejects unresolved runtime/allocator imports, writable globals and indirect
+calls. This is a checked property of the linked artifacts, not a general
+guarantee for arbitrary future callbacks or arbitrary monad instances.
+Do not replace specialization of monadic memory helpers with aggressive
+inlining: it expands nested binds excessively in the Lean code generator.
+
+G13 returnable entry
+--------------------
+leanboot_os_start at image offset zero is the supported entry. Before entering,
+bootstrap must provide ARM execution, executable coherent code, an 8-byte
+aligned valid caller stack with 8 writable bytes, and mapped private RAM at
+0x26330000..0x26340000. The seven-instruction stub saves r4/LR and the caller's
+SP, selects the private stack, calls leanboot_os_main, and restores the caller
+on a returning path. It does not initialize DRAM, mappings or exception vectors.
+
+The first Lean actions read CPSR, then SP/SCTLR. EntryCheck rejects (code 26)
+anything other than ARM SVC with IRQ/FIQ masked, an aligned SP with at least
+4 KiB remaining in the private stack, and the observed G13 SCTLR 0x00c0181d.
+Mode rejection precedes privileged-register access; all rejection precedes
+UART/image processing. These are admission checks, not a way to safely invoke
+the stub with unmapped RAM or a bad caller stack: its first instructions already
+need those prerequisites. Calling leanboot_os_main directly on MBOOT's stack
+is unsupported and rejected by the stack check.
+
+The full-image ARM tests observed at most 584 private-stack bytes during
+preparation, including the callback. This is measured coverage, not a formal
+maximum. Preparation mode and pre-transition errors return to the caller;
+terminal success deliberately abandons the caller stack. This standalone entry
+has been tested offline, not yet on the TV. The shared preparation core has
+also passed TV boots through the default BootGate entry described below.
+
+Memory primitives
+-----------------
+load8/store8 (MemoryM): exactly one byte load/store; no alignment requirement.
+load32/store32 (MemoryM): exactly one aligned 32-bit RAM load/store.
+readMmio32/writeMmio32 (HardwareM) reuse those instructions for device registers.
+readMmio8/writeMmio8 likewise reuse the existing byte primitives with the
+hardware color; they add no assembly or foreign declarations.
+load16/store16 (HardwareM): exactly one aligned unsigned 16-bit device access.
+
+Pre: the caller owns a stable mapped range, or names one of the explicitly
+listed hardware registers below with its required access width. RAM bounds,
+address wrap and overlap are handled by Memory.lean. Those checks cannot prove
+physical ownership, device semantics or absence of DMA/concurrent mutation.
+Post: loads return zero-extended data; stores return scalar zero. Only r0/r1
+are caller-clobbered, no cache/barrier operation is implicit. All preserve
+stack, callee-saved registers, mode, interrupt masks and CPU control registers.
+
+Fixed hardware accesses:
+- G13 UART0 0x1f201300 byte TX; 0x1f201328 32-bit line status.
+  uartStatus reads status; uartWrite writes one byte and uses the shared
+  DSB+ISB barrier, returning zero. Both are now ordinary Lean compositions
+  of MMIO primitives: their two dedicated routines (ten instructions) are gone.
+  Caller must establish bit 5 (space); bit 6 also means fully drained.
+- G13 MIU pipe 0x1f203114 and status 0x1f203140, both 16-bit. Cpu.lean clears
+  request bit 0, sets it, waits at most 1048576 reads for status bit 12, clears
+  request bit 0 again and issues a barrier. Other control bits are preserved.
+  A timeout before terminal transition returns 20; afterward it halts in RAM.
+- G13 interrupt masks: 0x1f203290/294/298/29c and 0x1f2032d0/d4/d8/dc,
+  32-bit writes of 0xffff matching exact V013 MBOOT 0x27615988..0x276159a4.
+- QEMU virt PL011: 0x09000018 32-bit flags, 0x09000000 32-bit TX.
+  Bounded Lean polling waits for TXFF (bit 5) to clear.
+
+G13 Ethernet RAM experiment
+--------------------------
+ethernet.ld selects leanboot_ethernet_start, a separate seven-instruction
+entry using the same private stack and admission checks as the OS entry.
+It calls compiled Lean, not MBOOT. It is not installed in either boot slot.
+The bootstrap must verify the exact TV, relocation and cache helpers, reserve
+0x26400000..0x26410000, and upload coherent code/control before invoking it.
+The payload checks both section descriptors: cached 0x26400c0e at 0x297f0990
+and uncached alias 0x26400c06 at 0x297f1990. These are observed V013 mappings,
+not a generic MMU setup or proof that no other bus master owns the memory.
+It rejects an already-enabled MAC instead of taking over an active driver.
+
+Unsafe/Emac.lean owns all controller operations. Register offsets refer to
+the logical MAC layout; physical address is 0x1f204000 + offset*2, with low
+and high halfwords accessed as two 32-bit transactions four bytes apart.
+PHY/clock byte accesses are the exact 59 constant writes in EmacConfig.lean
+plus masked pinmux writes at 0x1f203d41 and 0x1f203dbd. The recipe matches
+V013 MBOOT 0x2749fc18 and the public MT5867 HAL; it does not program efuses.
+MDIO uses MAC control/management/status registers, with bounded idle polling.
+
+DMA addresses are relative to MIU0 0x20000000. Four 8-byte descriptors start
+at physical 0x26400000, four 2 KiB RX buffers at 0x26401000, and a 2 KiB TX
+buffer at 0x26404000. Only the uncached 0x664... aliases are used after the
+initial cache cleanup. Descriptor ownership is checked before passing a
+completed frame to the generic core. The address must match its assigned
+buffer; received pointers are never trusted as arbitrary physical addresses.
+Ethernet/Descriptor.lean performs this decoding and payload-length validation
+as pure safe Lean; the adapter still owns stable reads, barriers and DMA release.
+The controller supplies/validates Ethernet FCS; the core excludes those four
+bytes and validates ARP/IPv4/ICMP/UDP itself. No filesystem or storage writes
+exist. UDP port 7533 only echoes data; it is not an update or command parser.
+
+Live MBOOT enters SVC with IRQ/FIQ enabled (CPSR control byte 0x13). Ethernet's
+outer Lean function checks SVC before invoking maskInterrupts (MRS; CPSID IF;
+return). The session then applies the strict EntryCheck checks. On every normal
+return, restoreInterrupts writes the saved CPSR control byte (MSR CPSR_c);
+only a saved ARM/SVC value may be passed to it. These two primitives add six
+instructions. The OS entry is unchanged and still requires its caller to mask
+interrupts; its newer offline-tested admission path is not a direct MBOOT-go
+entry without that extra preparation.
+
+During the session CPU IRQ/FIQ are masked; MAC interrupts are disabled. RX is released only
+after the response is prepared/transmitted. TX waits for completion before
+buffer reuse. Final cleanup disables RX/TX/interrupts and drains the MIU pipe.
+PHY settings remain powered until normal reset. Any UART byte ends receive;
+poll/packet budgets are finite, not calibrated wall-clock deadlines. The
+host must still bound execution and inspect the result rather than assume
+that a timer, link or bus transaction always completes. MMIO bus faults or
+stalled bus transactions are outside these software polling guarantees.
+
+CPU primitives
+--------------
+readCpsr is MRS and return; readSp is MOV and return. Their results only describe
+the current execution state. readSctlr/readClidr/readCcsidr are one MRC and
+return. selectCache writes CSSELR then ISB. cleanSetWay writes DCCISW.
+barrier is DSB/ISB. Their precondition
+is privileged ARMv7-A execution with the architectural registers available.
+Cpu.lean decodes CLIDR/CCSIDR, derives line/set/way positions and traverses all
+data/unified caches. No guessed cache geometry is hard-coded. QEMU runs the
+real CP15 instructions; check-cpu.py supplies controlled register values to
+exercise additional geometries and timeout behavior.
+
+Secure boot-parameter message
+-----------------------------
+sendVerifiedBoot uses the exact V013 service identifier 0xb200585e and takes
+the message pointer in r1. VerifiedBoot.lean builds the 132-byte unlocked/
+orange message at 0x26320000, including the original OS-version word and ASCII
+vbmeta digest. It validates the digest length/encoding and bounds before any
+write. This transmits the real device state; it does not authenticate images.
+The host still verifies the exact image/profile hashes. The message serializer
+is checked byte-for-byte against execution of MBOOT's 0x274c784c routine.
+
+Pre: SVC/non-secure ARMv7 execution, existing stock secure firmware, identity
+mapped non-secure message RAM, and completed cache/MIU flush for the message.
+The six-instruction wrapper saves r4-r12/LR on the aligned caller stack,
+sets the fixed service ID, executes SMC, and restores the saved registers.
+Only r0-r3 and flags may change; r0 is the service result. The caller stops
+before Linux if the result is nonzero. No generic arbitrary-call interface is
+exposed. Unknown secure-firmware behavior is outside Lean's memory model.
+The second RAM trial returned zero from this service and reached native READY
+at 19.91 s; the first trial without it failed init_user0. QEMU does not model
+this service or the secure firmware's implementation.
+
+Terminal transition
+-------------------
+G13 requires one active CPU in SVC, IRQ/FIQ maskable, an identity map for the
+code/data/stacks, idle storage/DMA, and private RAM for the new stack at
+0x26300000..0x26310000. Linux Image/FDT/initrd must already be verified and
+prepared. These physical conditions are not established by a type signature.
+
+Cpu.enterLinux first cleans caches and flushes the MIU pipe. It masks the
+interrupt controller and calculates SCTLR with I/C/M cleared in Lean.
+beginTransition masks IRQ/FIQ, writes that SCTLR, synchronizes, replaces SP,
+and branches to compiled Lean. It cannot return. Lean cleans caches again on
+the fresh uncached stack: this removes dirty lines created by the first pass's
+own stack accesses, without depending on stale data from the old stack. The
+fresh stack was covered by the first clean and unused afterward. A second MIU
+flush completes before jumpLinux invalidates I-cache/branch prediction and
+issues the exact vendor SMC 0x8200000f. The meaning of that SMC beyond its
+observed position in V013 remains reverse-engineering evidence, not a general
+ARM protocol. The kernel and FDT arguments from KernelConfig survive the stack
+switch and secure call. Then r0=0, r1=0xffffffff, r2=the supplied FDT, and BX
+uses the supplied kernel entry (G13: 0x23000000 and 0x20208000 respectively).
+The exact TV kernel independently forces its FDT address to 0x23000000.
+
+QEMU uses private stacks ending at 0x46410000/0x46310000 and kernel/FDT at
+0x40208000/0x43000000. Its two-pass cache transition shares Cpu.cleanCaches.
+It has no G13 MIU, interrupt-controller writes or vendor SMC. The virtual
+machine is not a cache-coherency, panel, secure-world or G13 storage model.
+
+Terminal primitives may clobber all registers and never restore caller state.
+No successful call returns. The original standalone trials below made no
+persistent bootloader modification.
+The first G13 terminal trial reached Linux and native early init, then failed
+init_user0 and requested recovery. Adding the verified-boot message allowed
+the second trial to reach native READY. These are individual physical trials;
+passing the virtual target does not establish general hardware reliability.
+
+Build and review rules
+----------------------
+audit.py rejects authored C/assembly files, extern/DSL use outside Unsafe,
+public raw FFI declarations, physical effects imported into the core,
+unexpected primitive instructions, undefined runtime symbols, writable globals,
+misplaced entries and calls outside each image. Privileged opcodes must be
+inside the named allowlisted routines. All code mapping ranges must decode.
+The two local DSL extensions (halfword access and SMC) have recorded provenance.
+General RAM effects must pass checked Memory wrappers; hardware effects are
+restricted to the fixed board register lists above. Do not introduce a generic
+call-address primitive to conceal MBOOT reuse.
+
+Initial G13 RAM experiments use MBOOT's command interface for upload and raw
+eMMC reads; their host-side cache synchronization may use resident helpers.
+The default selector below uses its own bounded FCIE transactions. DRAM
+training and the early secure-loader stages still depend on stock firmware.
+
+Default boot-image selector and block bootstrap
+----------------------------------------------
+BootGate is entered after MBOOT's ordinary kernel handoff, in ARM SVC with
+IRQ/FIQ masked and SCTLR M/C/I clear. The first three-instruction DSL stub
+sets SP=0x26340000 and branches to compiled Lean Stage0. The v4 container
+snapshots the 128 KiB prefix at 0x40000000 and expands the checked, compressed
+gate (at most 256 KiB) to 0x26000000. Its entry is at offset zero. It then
+owns 0x40000000..0x41000000 for the bundle/network workspaces, in addition to
+the existing OS preparation regions. 0x26500000..0x27900000 preserves the
+MBOOT-prepared initrd while the larger OS preparation runs. The original FDT
+at 23000000 is backed up at 26410000..26420000 and restored if preparation
+returns an error. MBOOT's r2 is a legacy-tags pointer, retained for fallback.
+The caller must establish ownership of these ranges.
+
+The original kernel prefix and boot header are LZ4-compressed in the boot image.
+The rest of the kernel stays in place. Length, distance, input and output
+bounds are checked by the generic Lean Lz4 decoder. This
+is not authentication. A malformed indispensable kernel/gate can still
+require UART recovery; the three-cycle policy cannot recover broken code
+that precedes the policy itself. No executable MBOOT changes are required.
+
+Bootstrap implements FCIE command framing and single-sector DMA in HardwareM.
+It does not call MBOOT code. Its only FFI accesses are the existing memory,
+16-bit register and barrier primitives. The controller/card, pads, bus width
+and timing must already have been initialized by exact V013 MBOOT. This is
+not a from-reset eMMC driver. The instruction-prefix identity guard
+complements host full-image hashes without invoking the guarded functions.
+
+FCIE registers are 16 bits at 1f222600 + index*4. Commands verify the command
+FIFO, wait for DAT0, check response index/R1, and transfer exactly 512 bytes
+through MIU0. DMA addresses are physical RAM addresses minus 20000000; the
+MIU selector is forced to zero and restored afterward. Cache-enabled probe
+callers receive full cache clean/invalidation before/after DMA; the installed
+entry has the data cache off. MIU writes are drained before starting DMA. Every
+poll is bounded (1024 for clearing status, 1000000 for device events).
+Returned errors record status/register diagnostics at 26350f00..26350f0c,
+stop the job and disable the clock. On an error the module is disabled and
+held in reset, with a bounded reset-status check, before Linux initializes it.
+No vendor fatal error handler or unbounded retry can be reached. This does not
+guarantee that a failed device or bus will recover. DDR/pad/timing registers
+are not changed. Reads require the exact initialized driver's sector-mode
+byte and pointer at 294a3735 and 28fa384c as additional identity guards.
+
+Before a write, CMD8 reads the live EXT_CSD into a private 512-byte buffer at
+26350c00. Only the user partition, disabled write cache and 512-byte sectors
+are admitted. The adapter never changes these card settings or issues erase,
+partition-switch, boot-configuration or firmware commands. The write command
+is CMD24 and the caller independently reads the target sector back.
+
+Buffers are 512 bytes, 64-byte aligned, start at 26350000..26350a00 and do not
+overlap the EXT_CSD buffer or diagnostic words. Reads and writes are restricted to the final
+two upgrade LBAs, 0x3217fe and 0x3217ff. BootJournal
+accepts only valid versioned records with CRC32 and complemented fields. It
+writes the inactive copy and reads it back before entering the larger loader.
+A returned read/write error, readback mismatch or inconsistent sequence selects stock. This
+is a recoverability protocol, not a guarantee about eMMC power-loss behavior.
+
+The direct terminal jump reuses the QEMU jump primitive because MBOOT has
+already performed the two secure-monitor services in this entry path. It
+invalidates instruction/branch state, sets the Linux registers and branches;
+it must not repeat the secure calls used by the separate early RAM OS loader.
+
+The two probe-redirect routines emit one instruction each for host-controlled
+RAM-only tests of exact MBOOT sites. They are not linked into the installed
+selector. The host verifies the original instruction before a RAM override.
+
+After relocation the gate enables SCTLR.I only, through a private four-
+instruction write primitive and a restricted Lean wrapper. MMU and data-cache
+bits remain off. MBOOT has already invalidated instruction state; the terminal
+jump invalidates it again. ARM Linux permits I-cache on at entry. This avoids
+running the decompressor from uncached DRAM. UART messages poll the transmit
+status with a finite bound before every byte.
+
+Signed-update crypto and local storage model
+-------------------------------------------
+Unsafe/UpdateCrypto.lean adds two private BaseIO declarations with MemoryM
+wrappers and explicit lifts for HardwareM. No new assembly is introduced.
+
+leanboot_update_signature(header): caller owns 160 stable readable bytes;
+verifies Ed25519 over bytes 0..95 against bytes 96..159 using the public key
+embedded at build time. The key is not read from the package or writable
+storage. Returns false on signature failure. No memory writes outside its
+stack and no storage/network effects.
+
+leanboot_update_digest(image, length, expected): caller owns stable readable
+image bytes and a 32-byte expected digest. Computes SHA-256 and compares all
+32 bytes. CryptoBounds rejects zero addresses, wrapping input/digest spans and lengths
+above 16 MiB before invoking the foreign function. Signature calls likewise
+require a nonzero, nonwrapping 160-byte span. These are arithmetic checks, not
+a RAM mapping or ownership proof. No writes outside its stack.
+
+Unsafe/update/crypto.c contains only these adapters and freestanding memory
+support routines. Pinned HACL* portable C supplies Ed25519, SHA-2 and field
+arithmetic. Downloaded sources and their licenses live under assets/build;
+tools/bootloader/update/crypto-lock.json pins every source/header hash and the
+upstream revision. Tiny standard-header declarations permit freestanding
+compilation; retained malloc/stdio/exit references must fail the link/audit.
+F* proofs are not replayed here. The C adapters, ABI, compiler and signature/
+hash specifications are explicit parts of this implementation's trust base.
+
+For install and boot checks, input and scratch must be disjoint, mapped and
+exclusively owned. Network/other DMA must not mutate input after signature
+verification, while copying to storage, or before execution of verified code.
+Memory colors alone do not establish this condition. Caller policy and bank
+mapping are trusted, never packet fields. Authentication does not prove the
+signed payload is safe or compatible beyond the declared checked fields.
+
+The supplied UpdateModel is under tools/bootloader/Unsafe/, never in a board
+image. Its three HardwareM storage operations call model-only C traps that
+Unicorn intercepts. Bank 0/1, sector bounds, storage reads/writes and flush
+faults are enforced by the local interpreter. The current physical writer is separately described below. The installed
+older network gate has a public key, but only admits volatile network execution.
+Power-cut checks validate only the stated finite model, not eMMC durability.
+
+Signed network execution
+------------------------
+NetworkBoot uses the same manifest and Begin/Data/Seal transport as updates.
+Its component-1 Seal callback authenticates a volatile package; component 2
+uses the physical application writer described below.
+The compiled minimum version still applies, but repeated signed development
+versions are allowed. Persistent installation retains strict version advancement.
+The accepted package is frozen against subsequent Data/Begin packets. A bounded
+ACK retry interval precedes DMA stop, a second signature/hash verification,
+copy to the execution reservation and a final digest check of the copied bytes.
+
+Network state: 40300000..40300080; context: 40301000..40301024;
+scratch reservation: 40310000..40311000; package: 21200000..22200000;
+executable image: 40600000..40700000; payload stack: 26350000..26360000.
+The gate retains its separate 26330000..26340000 stack. The host must verify
+MBOOT mappings for RAM entry. During kernel entry MMU/data cache are off, so
+Emac uses physical 264... DMA addresses; with MMU on it uses the established
+uncached 664... aliases. Device DMA addresses themselves are unchanged.
+
+The private call boundary in Unsafe/Network.lean takes an Executable plan.
+Its erased proof requires a four-byte-aligned entry and a complete first ARM
+instruction inside the supplied image, with length at most 1 MiB. The address
+is derived from fixed base 40600000 and context is always 40301000. There is
+no public arbitrary-address call wrapper in Unsafe/Primitives.lean. Fourteen instructions
+in the existing ARM DSL preserve caller SP/LR, invalidate instruction cache
+and branch prediction, select the private payload stack, call, and restore
+the caller on return. This is the sole allowed indirect call site. The caller
+must already have authenticated stable code, disabled DMA, cleaned data
+caches and drained MIU. This is not an arbitrary MBOOT-call interface.
+
+Payload ABI: ARM/AAPCS, r0=context, eight-byte aligned private stack, IRQ/FIQ
+masked. Context words are LNB1 magic, ABI 1, original legacy tags, FDT address,
+kernel address, signed version, image length, caller SCTLR and a diagnostic
+word. Code must be position independent or linked at 40600000. A returning
+payload preserves AAPCS registers and CPU/MMU/cache state; it must not select
+the resident gate's stack or overwrite resident code/OS inputs. Signatures do
+not prove that development code satisfies this contract. Hung or faulty signed
+code may require a power cycle. The current source offers the network window
+on the third-start path too; do not keep offering faulty development code.
+
+The version-4 boot container retains the same 128 KiB kernel prefix.
+A 3660-byte initial stage snapshots that prefix at 40000000, bounds/checks its
+header and compressed gate, expands at most 256 KiB to 26000000, verifies the
+expanded hash and jumps. Metadata expands to 40020000. These container hashes
+detect corruption, not malicious replacement of the unlocked boot chain.
+Only the embedded public key authorizes network packages. No test key may be
+installed in a resident build.
+
+Local safety refactor (2026-11-01; not installed)
+------------------------------------------------
+UInt32 arithmetic is ordinary Lean, including its defined modular wrap. The
+hazard is interpreting the result as memory, a register or an executable
+address. Types.lean introduces nominal CpuAddress, ByteCount, EntryOffset,
+ReleaseVersion, PollBudget, BootTags and Status without coercions or numeric
+instances. CpuAddress includes CPU-visible aliases; it does not assert that
+an address is physical, mapped or exclusively owned. These types currently
+cover network orchestration/receiver and Crypto; older scalar memory, storage
+and wire interfaces still require explicit conversion at their boundary.
+
+Following TV.Runtime's named Effects and platform adapter pattern:
+- NetworkBoot/Plan owns layout, entry checks and Executable's arithmetic proof.
+- NetworkBoot/Receiver owns the generic protocol/receiver-state interpreter.
+- NetworkBoot/Runtime owns lifecycle and failure ordering through Effects.
+- Unsafe/Network owns MAC/PHY, context writes, cache maintenance and the call.
+
+After a successful reset of software receiver state, start is always followed
+by stop, even if PHY/configuration fails. A busy MAC is not acquired or stopped.
+A stop failure returns 20 and blocks authentication/copy/execution; this does
+not prove the failed hardware actually stopped. On success: reauthenticate,
+validate entry, copy (failure now returns 44), hash destination, prepare and
+invoke. Preparation failure never invokes the payload. The executable proof
+does not authenticate bytes: stable source/destination, stopped DMA and the
+correct Effects implementation remain preconditions of the controller model.
+
+Why the remaining machine effects are needed:
+- RAM/MMIO loads and stores connect the typed interpreter to mapped memory.
+  Bounds proofs cannot create a mapping or describe device side effects.
+- CPU register/cache/barrier operations and private-stack transitions enforce
+  machine entry/exit contracts. Ordinary Lean cannot issue these instructions.
+- The two crypto calls reuse pinned HACL code and the fixed build-time key.
+  Bounds guards narrow their input contract; cryptographic/ABI correctness is
+  still outside the Lean proofs in this repository.
+- The single network call bridge transfers control to admitted machine code
+  on a separate stack. Its arithmetic proof does not sandbox that code or
+  prove termination, AAPCS behavior or preservation of the resident loader.
+
+No assembly was added. The audit now enumerates 25 private foreign declarations
+and 136 authored ARM instructions, down from 27 and 146. Linked network images
+still have no heap, writable globals or runtime imports. Inlining the two
+Executable consumers lets the checked record/proof disappear at compilation;
+the source-level interface remains typed and the controller remains shared
+with the deterministic test interpreter.
+
+NetworkBoot/Proofs adds eight named theorems: entry length/alignment/bounds,
+nonwrapping executable address, busy-controller noninterference, failure before
+invoke, and rejection before either crypto call. The effect laws assume a
+lawful monad. check-safety.py executes 16 production-controller traces, ten
+crypto-span boundary cases and eight executable-range cases; six negative
+compilations ensure nominal type mismatches really fail. These checks are
+finite coverage, not a theorem of complete device or cryptographic behavior.
+
+Direct application-image writer (local candidate, not hardware-tested)
+----------------------------------------------------------------------
+Unsafe/Flash.lean implements Update.Storage with the existing FCIE driver.
+FlashPlan.withSector rejects before producing a nominal SectorAddress; only
+banks 0/1 and sectors 0..32767 are allowed. Proven address bounds exclude the
+journal and every sector outside 0x309000..0x318fff. The sender never supplies
+these physical addresses. The journal API retains its narrower old allowlist.
+
+The fixed DMA bounce buffer is 26350800..26350a00. Full-image readback uses
+26500000..27500000; this is before BootGate reuses 26500000..27900000 to back
+up the initrd. Incoming packages use 21200000..22200000, after the exact kernel
+ending at 2112b000 and before the FDT at 23000000. No hardware map of additional
+high DRAM is assumed. The final FDT recipe reuses 26350a00..26350a40 only after
+all storage I/O. Normal startup receives an authenticated bank choice, not an
+unsigned disk header. Linux owns subsequent loop-device/filesystem semantics.
+
+The adapter rejects cached/MMU-enabled execution and a mismatching MBOOT
+identity guard. MBOOT must have initialized the card, bus width and timings.
+No resident MBOOT function is called. Every app-bank read/write reads live EXT_CSD first;
+only the user partition, disabled card cache and 512-byte sectors are accepted.
+Only CMD8, CMD17 and CMD24 are issued; no erase or card-configuration changes.
+Each command/DMA wait is bounded. Failures stop/reset the controller. A card
+read error aborts installation instead of authorizing first provisioning.
+Reads need the same guard: authenticating bytes in another selected hardware
+partition would not authenticate the user-partition bytes Linux later mounts.
+The final error bits are checked again after DAT0 clears; errors appearing
+during the busy phase must not become successful transfers. Flush rejects a
+disabled/reset controller or an active job before inspecting busy/error state.
+
+Flush assumes disabled-card-cache CMD24 completion plus DAT0-ready makes the
+sector durable, and drains the MIU. This is an explicit hardware assumption,
+not a proven or physically fault-tested fact. Partial/torn-sector model tests
+cover selected failure patterns, not all controller/media power-loss behavior.
+The StorageModel proof covers arbitrary torn contents under sector isolation;
+that assumption is not established for the card's internal flash translation
+layer during power loss. The model is not a formal refinement of the driver.
+No hardware anti-rollback is claimed: loss/restoration of both banks resets the
+software version history. The compiled minimum and signatures still apply.
+
+While a synchronous Seal installs, Ethernet DMA remains confined to its four
+fixed RX buffers and TX workspace at 26400000. It cannot modify the package or
+readback regions. No new datagram is dispatched during that call. After success,
+only duplicate Seal packets receive replies; they return the cached result and
+do not write again. The receive loop has a 4,000,000-poll idle cap, at most 40
+such budgets in total, and 65,536 packets. Poll counts are not wall-clock times.
+The sender allows a separate bounded final-commit timeout.
+
+Deployment must back up and reserve these upgrade extents, prevent vendor OTA
+reuse, stage the normal-OS mount helper, and test the exact candidate in RAM
+before changing the resident boot prefix. See tools/bootloader/update/FLASHING.txt.
+
+Offline controller review
+-------------------------
+check-flash-hardware.py hash-verifies the recorded TCL mt9221 source snapshots
+in assets/research/g13-leanboot-default/sources/manifest.json. The header's
+CMD_END, DMA_END, JOB_START, CHK_CMD, error and card-busy definitions and the
+HAL's separate command/data phases corroborate the register model. These are
+vendor references, not proof of equivalence to every G13 silicon revision.
+The saved partition manifest independently checks that both banks lie within
+upgrade and outside every other recorded partition.
+
+The scheduled model withholds DMA bytes until DMA_END and keeps writes
+volatile until the card becomes ready. It exercises delayed command/data/
+busy completion, R1 error bits, wrong response indices, bounded timeout/reset,
+wrong partition/cache/sector settings and non-prefix bit tears while busy.
+It reproduced wrong-partition read acceptance and missed late write errors
+in the earlier candidate before the fixes above. Actual electrical timing,
+minimum polling delays, NAND durability and other autonomous bus masters
+are not modeled. Poll budgets remain instruction counts, not milliseconds.

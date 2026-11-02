@@ -1,0 +1,14 @@
+[package]
+name = "nolibc-selftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Exercises the C library underneath std (threads, TLS, malloc, files, sockets, time, signals); runs as PID 1 in QEMU"
+
+[[bin]]
+name = "selftest"
+path = "../../../../../test/fixtures/nolibc-selftest.rs"
+
+[dependencies]
+libc = "0.2"
+platform = { path = "../../../../../src/platform" }

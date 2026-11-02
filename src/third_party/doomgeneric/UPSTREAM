@@ -1,0 +1,20 @@
+doomgeneric (https://github.com/ozkl/doomgeneric), the original id Software
+Doom engine (GPL-2.0) made portable through a few platform hooks.
+Commit e257a09527062bfb986b6e5e0780839b6cbd5b71. Only the engine files tools/doom/build.sh compiles are
+vendored here (plus all headers), unmodified.
+
+Multiplayer restoration (2026-10-31): the matching network headers are from
+Chocolate Doom 2.2.1, official tag chocolate-doom-2.2.1, source commit
+2ddd290b8226e1d1f0c52e344e76150261a8c0c3:
+https://github.com/chocolate-doom/chocolate-doom/tree/2ddd290b8226e1d1f0c52e344e76150261a8c0c3/src
+Restored net_client/common/io/loop/packet/server/structrw C sources, missing
+net_common/net_structrw headers, and aes_prng.h (seed type only). Original
+GPL notices retained; trailing whitespace normalized. net_client's config
+binding uses doomgeneric's M_BindVariable name instead of M_BindStringVariable.
+Local original engine edits: enable FEATURE_MULTIPLAYER, guard dummy network
+globals, restore original multiplayer D_StartNetGame/BlockUntilStart paths,
+zero connect/settings structs, and call default network gameplay telemetry.
+Private-LAN UDP replaces SDL_net through src/doomtv/native/doomtv_net.c.
+No upstream net_gui, SDL_net, Internet query or dedicated-server source is
+included. The description above that engine files are unmodified applies to
+the original import, not this explicitly documented multiplayer restoration.

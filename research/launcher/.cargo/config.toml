@@ -1,0 +1,6 @@
+[build]
+target-dir = "../../assets/build/launcher/target"
+
+[target.armv7-unknown-linux-musleabihf]
+linker = "rust-lld"
+rustflags = ["-C", "target-cpu=cortex-a55"]

@@ -1,0 +1,20 @@
+name = "HttpTest"
+defaultTargets = ["HttpTest", "transcript"]
+
+# Only the library modules under test are compiled, into this package
+# (srcDir ../..), not all of Yt as a [[require]]d package.
+[[lean_lib]]
+name = "Yt"
+srcDir = "../../../../src/lean/yt"
+globs = ["Yt.Json.+", "Yt.Http.+"]
+
+[[lean_lib]]
+name = "HttpTest"
+
+[[lean_exe]]
+name = "transcript"
+root = "Main"
+
+[[lean_exe]]
+name = "bench"
+root = "Bench"

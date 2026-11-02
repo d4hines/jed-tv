@@ -1,0 +1,5 @@
+#!/bin/sh
+# Linker for Rust programs that carry C++ (the Lean runtime in flighttv):
+# zig c++ with its bundled musl and libc++ for armv7-unknown-linux-musleabihf.
+# Use with -C link-self-contained=no so Rust does not add its own musl startup files.
+exec zig c++ -target arm-linux-musleabihf -mcpu=cortex_a55 "$@"

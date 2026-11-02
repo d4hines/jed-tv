@@ -1,0 +1,60 @@
+Lean PID1 rewrite and graphical demo
+===================================
+Branch: d4hines/pid1-demo, GitHub d4hines/dande-tv.
+Integration worktree: main/assets/build/pid1-publish (isolated from hardware work).
+
+Commands from this branch:
+  nix run .#pid1
+  nix run .#pid1 -- --check
+  nix run .#pid1 -- --check-supervisor
+  nix run .#lean-check
+
+The self-contained demo builds ARM32 apps, generates local video/audio and
+includes Slides and Freedoom. No firmware, private media or sibling checkout
+is needed. Its graphical kernel is the 6.18.57 virtio surrogate, NOT the dumped
+stock kernel. Exact-kernel QEMU code and hardware audit remain on this branch.
+
+Executable Lean modules now drive the real tvinit binary:
+  lean/TV/Menu.lean: menu navigation and activation policy.
+  lean/TV/Supervisor.lean: fork/wait classification, child lifecycle,
+    orphan handling, Home TERM-to-KILL deadlines and exit-status decoding.
+  src/tvinit/src/{menu,supervisor}.rs: scalar ABI adapters.
+  tools/tvinit/build.rs: fresh Lean -> C -> ARM32 compilation.
+Rust still performs rendering, input, Linux calls and returned side effects.
+This is an incremental rewrite, not an all-Lean PID1 or whole-program proof.
+
+Development checks exercise 193,536 menu and 80,387 supervisor C-ABI cases,
+including all 65,536 low-word wait statuses and temporal boundary sequences.
+Neither scalar component imports the Lean runtime or an allocator. Disable
+closed-term extraction in Supervisor to avoid runtime-dependent once-cells.
+Existing Menu proofs remain optional; no new proofs are required by the build.
+The owner deferred formalization until the program structure settles.
+
+The supervisor QEMU check runs an ARM32 app which leaves an orphan and ignores
+SIGTERM, presses Home twice, requires one TERM then KILL, and opens Slides next.
+The separate graphical tour checks generated video/audio, Home, Slides, Doom.
+Both QEMU checks and the Nix native checks passed on this slice.
+ARM32 tvinit is 527,888 bytes (previous menu-only build: 525,472 bytes).
+
+Next work: continue moving executable policy into Lean while preserving thin
+Linux adapters. HTTP hardening, further decoder shrinking and hardware kits
+were deferred by the owner; do not reintroduce these as prerequisites.
+No TV access, boot changes or hardware-agent edits were included in this slice.
+
+Issue 12 foundation landed after the supervisor slice
+----------------------------------------------------
+Read ISSUE_12_PLAN.txt and ISSUE_12_VALIDATION.txt for the agreed architecture,
+implemented stage, deliberate exceptions and repeat commands. Apps/Sandbox
+are executable Lean modules defining identities, resource limits and seccomp
+BPF. Authored native launch mechanisms are in lean/native/linux.c. App input
+comes from a per-launch Unix socket; physical input is PID1-only. App UIDs are
+10001 ytplay, 10002 doomtv, 10003 slides. No subprocesses/re-exec; threads work.
+UID-private directories are in /data/apps/<uid>; these remain RAM-backed until
+the persistence stage. Graphical surrogate kernel now supports user IDs/Unix
+sockets. Do not substitute it for the exact dumped kernel.
+
+Passed 667490 native policy/ABI cases and ARM32 hostile launch tests with both
+kernels. Ordinary app tour also passes. New ARM32 tvinit is 541472 bytes.
+Full Lean launcher, parental settings, network broker and revocable graphics/
+audio remain next work. Immediate visible Home has NOT been implemented yet;
+input forwarding stops immediately, then TERM/KILL cleanup still completes.

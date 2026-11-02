@@ -1,0 +1,12 @@
+[package]
+name = "snaketv"
+version = "0.1.0"
+edition = "2021"
+description = "Snake on a torus (prototype 10's RV32I game, main.S) on the TV, steered with the remote"
+
+[dependencies]
+font8x8 = { version = "0.3", default-features = false }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+platform = { path = "../platform" }

@@ -1,0 +1,225 @@
+TCL 32Q3K V109: stock-service root execution and firmware readback
+2026-10-30 America/Los_Angeles / 2026-10-31 UTC
+
+CONFIRMED RESULT
+
+The stock factory service executed a fixed identity command as uid=0(root),
+gid=0(root), SELinux domain u:r:tcl_sitatvservice:s0. This works from authorized
+network ADB while Android runs. During this root/readback work, no firmware,
+bootloader, or SELinux policy was changed. ADB itself remains uid=2000;
+adb root reports production-build refusal. This is root command execution
+inside the vendor service, subject to that service's SELinux permissions.
+
+Tested unit: TCL 32Q3K, G06 / MT5867 / MT9221, Android 11 ARM32,
+kernel 4.19.116+, V8-T221T04-LF1V109.000732, bootloader 01.01.250118.
+Fingerprint: TCL/G06_2K_US/G06:11/AR2101/AR33:user/release-keys.
+Authorized ADB target: 192.168.77.2:5555. SELinux: Enforcing.
+
+The bootloader was already unlocked from the earlier experiment, and Android
+had been recovered by a factory reset. Locked-device behavior is untested;
+the result does not establish that unlocking is required for this route.
+Do not repeat unlock or relock to reproduce it. No V122 update, patched boot,
+Magisk, UART, kernel exploit, or persistent root daemon was used here.
+
+The original V109 boot, recovery, vbmeta, vbmeta_system, dtbo, MBOOT and MBOOTBAK
+were then dumped and matched a second source read. The complete backup at
+../assets/backups/v109-stock-20261031 contains 33 images totaling 4522 MiB. Every image
+matched its second source read and passed a fresh host-file SHA-256 check at
+2026-10-31T04:58:24Z. See manifest.json, SHA256SUMS and host-verification.json.
+The original image files are mode0400. For future runs, check manifest.json
+rather than assuming an interrupted run finished.
+
+HOW WE FOUND AND REACHED THE ROOT COMMAND DISPATCHER
+
+The pulled/decompiled stock FactorySettings application contains an ordinary
+command-execution wrapper. Following its Java and native calls established:
+
+  ThirdParty.executeShell(command)
+    -> FactoryMenuAdapter.rootSeeker(command)
+    -> FactoryManager.setInformation(126, command)
+    -> com.tcl.tosapi.atv.TFactoryApi.native_doSetInfo(126, command)
+    -> libcom_tcl_tv_jni.so: tos_factory_set_system_info(26, string, length)
+    -> libsitatv.so: sbinder_factory, transaction 74, through /dev/sbinder
+    -> root sitatvservice: app_factory_root_seeker / factory_os_cmd_system
+    -> /vendor/bin/sh executing the supplied command
+
+This uses TCL's vendor Binder driver /dev/sbinder, not Android's ordinary
+/dev/binder. Android service-list results alone do not describe this path.
+Native call tracing is saved in native-setinfo-disassembly.txt and
+native-factory-set-system-info-disassembly.txt. root-research.md preserves the
+earlier investigation, including hypotheses that preceded the live result.
+
+FactoryIdentityProbe called setInformation(126, command) without registering
+its process. It returned true but the server logged UNREGISTERED and rejected
+transaction 74. That Java boolean does not prove command execution or success.
+
+The stock factory application contains a signed TSA_KEY and calls
+TvFunctionApi.systemAuthorized before privileged operations. Our helper loads
+the installed TvPlayerApi/JNI, runs with app_process32's process name set to
+com.tcl.factory.view, and supplies that same on-device application token.
+The service logs that the helper's actual PID was added to its licensed list;
+systemAuthorized returns 0. No private signing key or forged signature is used.
+Each successful registration is followed by a systemLogout call in a finally
+block; its observed return was 1. The helpers do not keep a registered process
+running between invocations.
+
+The signed token comes from TSA_KEY in:
+  assets/research/factory-decompiled/sources/com/tcl/factory/view/FactoryApplication.java
+The authorization wrapper is in:
+  assets/research/tvmanager-decompiled/sources/com/tcl/tosapi/atv/TvFunctionApi.java
+The helper first loads com.tcl.tosapi.atv.TvPlayerApi to initialize the stock
+JNI and middleware. It then calls TvFunctionApi.getInstance().systemAuthorized
+with the token, followed by TFactoryApi.getInstance().setInformation(126,...).
+The process name is supplied by app_process32's
+--nice-name=com.tcl.factory.view argument. Registration used the helper's real
+PID; we did not impersonate another PID or modify the stock factory APK.
+
+Once registered, TFactoryApi.setInformation(126, command) reaches the stock
+root-owned sitatvservice command dispatcher. The identity command used was:
+  /vendor/bin/toybox id; /vendor/bin/toybox id -Z
+Output appears in logcat under MI3 because the service owns stdout/stderr.
+Evidence: assets/research/factory-authorized-probe/stdout-identity-logcat.txt.
+
+The recorded successful helper PID was 6036. The server logged:
+  TVSDK - AUTHORIZATION : pid(6036) add in licensed app list ret = 0
+The identity output was:
+  uid=0(root) gid=0(root) groups=0(root),1000(system),1003(graphics),1005(audio),1023(media_rw),3009(readproc),9997(everybody) context=u:r:tcl_sitatvservice:s0
+  u:r:tcl_sitatvservice:s0
+The server then reported factory command return=0. The helper's own stdout,
+saved in assets/research/factory-authorized-probe/stdout-identity-result.txt, was:
+  systemAuthorized=0
+  setInformation126=true
+  systemLogout=1
+
+The fresh registration and root identity output establish execution. The
+boolean alone does not. Device logcat had an incorrect January 2025 clock;
+host backup timestamps record the actual October 2026 session.
+
+ACCESS LIMITS AND THE WORKING READ PATH
+
+- SELinux remains enforcing. The service could not access /data/local/tmp;
+  writing the identity result there failed despite successful registration.
+- The service could not read the boot/recovery partition nodes directly.
+  It could read the whole /dev/block/mmcblk0 device, MBOOT and both hardware
+  boot areas. Reading the corresponding raw offsets obtains boot/recovery.
+- Partition offsets and sizes were read from the live kernel's
+  /sys/class/block/mmcblk0p*/{start,size}, in 512-byte sectors, and matched to
+  /dev/block/by-name symlinks. Do not substitute older Fastboot size reports.
+- /tmp is /var/tmp on tmpfs. Root can stage files there. The staging directory
+  is root-owned mode0755; output files are mode0644 so ADB shell can read them.
+  A shell-owned mode0700 directory prevented this service from accessing it.
+- ADB's file-transfer service cannot access these tmpfs files, but ADB shell
+  can. Use adb exec-out cat, not adb pull, for the staged binary data.
+- ADB shell also cannot create files there. The Java helper copies our local
+  readback script into RAM using bounded Base64 chunks through the dispatcher.
+
+PUBLICATION NOTE — FACTORY AUTHENTICATION
+
+The original token-extraction, helper-deployment, replay, and cleanup recipe
+is omitted from this public selection pending focused distribution review.
+The three helpers that replay the signed factory application token are also
+omitted. No factory token or private signing key is distributed. The observed
+interface behavior, readback findings, limitations, and evidence references
+below are preserved. This note records research; it is not a turnkey recipe.
+
+WHY THE DUMP WORKED
+
+The service could open the whole eMMC device even though SELinux denied its
+access to the boot/recovery partition device nodes. The same bytes were read
+through mmcblk0 using the kernel's partition offsets. Example captured ranges:
+
+  Name       Node           Start sectors   Size sectors   Start/size MiB
+  MBOOT      mmcblk0p1                4096          10240          2 / 5
+  recovery   mmcblk0p10             120832          83968         59 / 41
+  boot       mmcblk0p11             204800          63488        100 / 31
+  super      mmcblk0p28            1953792        7065600        954 / 3450
+
+These are evidence for this unit, not constants to copy into another device.
+sysfs start/size units are 512-byte sectors; divide by 2048 for MiB. The dumper
+rejects unaligned partition ranges. Whole mmcblk0 was 30375936 sectors;
+mmcblk0boot0 and mmcblk0boot1 were 16384 sectors each (8 MiB).
+
+The root service cannot read the shell's /data/local/tmp files. FactoryReadback
+therefore reads the script as shell and sends Base64 in 128-character chunks
+through the authorized dispatcher, then decodes it under /tmp/tcl-readback.
+The root-owned staging directory is mode0755, the script0600, and staged
+output files0644. The script accepts only mmcblk0/mmcblk0boot0/mmcblk0boot1
+sources, checks ranges, and never uses a block device as a write destination.
+
+Each request carries a nonce; the host requires that nonce plus OK in the
+status file, the exact expected byte count, and a matching chunk hash. These
+checks prevent a stale staging file or a misleading Java boolean from being
+accepted as a successful read. The service's own command output is not the
+binary data channel; adb exec-out cat transfers the staged file.
+
+FAILED ATTEMPTS AND WHAT THEY ESTABLISHED
+
+- adb root: production-build refusal. ADB stayed uid2000 throughout.
+- Unregistered selector126 call: returned true but server logged UNREGISTERED,
+  sbinder_factory transaction74. Evidence: assets/research/device/factory-identity-log.txt.
+- Registered identity command redirected to /data/local/tmp: registration
+  succeeded but SELinux denied service access to shell_data_file. Evidence:
+  assets/research/factory-authorized-probe/logcat.txt. Capturing stdout in MI3 fixed the probe.
+- Direct root reads of boot/recovery device nodes: denied; reading the same
+  ranges through mmcblk0 worked. Evidence: assets/research/factory-authorized-probe/capabilities.txt
+  and readback-inspect-logcat.txt in that directory.
+- Shell-owned mode0700 staging directory: service access failed. Root-owned
+  mode0755 staging worked. Do not assume uid0 bypasses every permission check.
+- adb push/pull against tmpfs: adbd could not transfer there; the shell could
+  read the files with exec-out cat. Script installation used the dispatcher.
+- Earlier bootloader unlock: separate from this root technique. It preceded
+  the startup failure and factory-reset recovery documented in ../RECOVERY_NOTES.txt.
+  Do not confuse that recovery history with a prerequisite of the root route.
+
+BACKUP SCOPE AND VALIDATION
+
+The full plan includes every named eMMC partition except userdata, both 8 MiB
+hardware boot areas, and the first/last 2 MiB of the eMMC user area for partition
+table evidence. Preserve the manifest, geometry, mounts, logs and SHA256SUMS.
+The completed plan totals 4522 MiB; userdata, RPMB and hardware fuses are not
+included. The eMMC head/tail did not contain standard MBR/GPT signatures; the
+recorded live kernel geometry is authoritative for the captured ranges.
+
+Each chunk is at most 64 MiB. The TV hashes its RAM staging file; the laptop
+checks the byte count and SHA-256 during transfer, then the TV rereads the full
+source range for an independent hash. The host fsyncs each completed image.
+Manifest status verified means all these checks passed. source_changed means
+the transfer passed but the live source changed between reads; it must not be
+represented as a stable filesystem snapshot. .partial files are incomplete.
+
+Userdata is mounted and deliberately excluded. Other mutable partitions are
+captured online; even matching hashes do not establish cross-partition atomic
+consistency or prove that a restore has been tested. Calibration/certificate
+images are private to this TV; the host backup directory is mode0700.
+This capture was made after unlock and factory reset. Cache includes the
+earlier recovery-menu modification. The boot/kernel/recovery/MBOOT images
+were not replaced, but this is not a clone of the untouched factory-shipped
+device. Keep these originals and patch separate working copies.
+
+After a successful run, cleanup removes the RAM chunk and transient hashes.
+The small script/helper files remain for reuse; RAM staging disappears at reboot.
+No permanent root daemon, patched image, unlock, relock or update is installed.
+
+EVIDENCE INDEX
+
+- FactoryAuthorizedIdentityProbe.java and FactoryReadback.java: exact helpers.
+- readback.sh and dump-stock.py: bounded storage reads and verification logic.
+- assets/research/factory-authorized-probe/stdout-identity-result.txt: successful Java calls.
+- assets/research/factory-authorized-probe/stdout-identity-logcat.txt: registration, command
+  dispatch, uid0/service-domain output, and server command return0.
+- assets/research/factory-authorized-probe/capabilities.txt and partition-map.txt: permissions,
+  sysfs sectors, whole-device sizes and named partition links.
+- assets/research/device/post-backup-adb-state.txt: normal boot, uid2000 ADB, Enforcing and
+  the small files remaining in RAM after backup cleanup.
+- ../assets/backups/v109-stock-20261031/manifest.json: exact image ranges and hashes.
+- SHA256SUMS, host-verification.json, image-metadata.json and README.txt in
+  that backup directory: completed host checks, image headers and limitations.
+- ../RECOVERY_NOTES.txt: earlier unlock failure, recovery and prevention.
+
+RESEARCH LEAD
+
+The original analysis at
+https://www.own.security/en/ressources/blog/so-close-to-root-reversing-an-android-tvs-secret-binder
+helped identify the process-name authorization check. Its author's failed
+attempt on another TV is not evidence of our success. The live PID-registration
+log, uid=0 output and verified raw dumps above are the evidence for this unit.

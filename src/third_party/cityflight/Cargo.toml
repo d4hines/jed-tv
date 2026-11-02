@@ -1,0 +1,12 @@
+[package]
+name = "cityflight"
+version = "0.1.0"
+edition = "2021"
+description = "Vendored simulation, safety filter and JSBSim (Lean) plant of the city flight demo; see README.txt"
+build = "build.rs"
+
+[features]
+default = ["jsb"]
+jsb = []
+
+[dependencies]

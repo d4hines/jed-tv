@@ -1,0 +1,20 @@
+[build]
+# Build outputs live under the git-ignored assets/ tree (see AGENTS.md).
+target-dir = "../assets/build/app-target"
+
+# Static musl binaries linked by rust-lld: no C cross toolchain needed.
+[target.aarch64-unknown-linux-musl]
+linker = "../tools/pid1/linker-aarch64"
+
+[target.armv7-unknown-linux-musleabihf]
+linker = "../tools/pid1/linker-armv7"
+# The TV's Cortex-A55 runs AArch32 with NEON + ARMv8 extensions (and QEMU's
+# `-cpu max` emulates them); the target default has NEON off.
+rustflags = ["-C", "target-cpu=cortex-a55"]
+
+# C code inside Rust crates (ring, for TLS) is cross-compiled with zig cc.
+[env]
+CC_aarch64_unknown_linux_musl = { value = "../tools/toolchain/zcc-aarch64-unknown-linux-musl", relative = true }
+AR_aarch64_unknown_linux_musl = { value = "../tools/toolchain/zar", relative = true }
+CC_armv7_unknown_linux_musleabihf = { value = "../tools/toolchain/zcc-armv7-unknown-linux-musleabihf", relative = true }
+AR_armv7_unknown_linux_musleabihf = { value = "../tools/toolchain/zar", relative = true }

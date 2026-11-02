@@ -1,0 +1,10 @@
+[package]
+build = "../../tools/ffh264/build.rs"
+name = "ffh264"
+version = "0.1.0"
+edition = "2021"
+license = "LGPL-2.1-or-later"
+description = "FFmpeg 9.0.1's H.264 decoder, translated to unsafe Rust by c2rust; NEON assembly kept as assembly"
+
+[build-dependencies]
+cc = "1"

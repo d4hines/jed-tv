@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+exclude = ["pid1", "legacy-doom"]
+members = ["doomtv", "pid1/tvinit", "ytplay", "platform", "mp4", "ffh264", "tvosd", "pid1/audio", "pid1/display", "rpgtv", "flighttv", "third_party/cityflight", "flightgpu", "axiomtv/gfx", "snaketv"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

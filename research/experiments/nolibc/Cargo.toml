@@ -1,0 +1,24 @@
+# nolibc: build the TV apps without musl. `rt/` is a C library written in
+# Rust (plus a little assembly) that provides exactly the libc symbols Rust's
+# std and our crates import; it is built as a staticlib and installed as
+# `libc.a` (and an unwinder stub as `libunwind.a`) into a private sysroot dir,
+# so std's own `#[link(name = "c")]` picks it up instead of musl.
+# See build.py (how it links) and run.py (QEMU).
+[workspace]
+resolver = "2"
+members = ["rt", "apps/*"]
+exclude = ["probe-cscape"]
+
+[profile.release]
+# Same as src/Cargo.toml, so sizes compare like for like.
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# The libc itself: fat LTO turns the staticlib into one object in which only
+# the C ABI symbols stay global (its copy of `core` is internalized).
+[profile.rt]
+inherits = "release"
+lto = true

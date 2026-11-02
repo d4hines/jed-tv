@@ -1,0 +1,4 @@
+[toolchain]
+# Same stable compiler as app/ (1.92.0); no nightly features are needed.
+channel = "1.92.0"
+targets = ["aarch64-unknown-none"]

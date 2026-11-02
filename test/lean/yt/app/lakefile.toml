@@ -1,0 +1,13 @@
+name = "AppTest"
+defaultTargets = ["AppTest", "transcript"]
+
+[[require]]
+name = "Yt"
+path = "../../../../src/lean/yt"
+
+[[lean_lib]]
+name = "AppTest"
+
+[[lean_exe]]
+name = "transcript"
+root = "Main"

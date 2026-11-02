@@ -1,0 +1,121 @@
+Direct signed application updates on G13
+========================================
+
+Status: implemented locally, not installed or physically validated. The
+installed older gate still accepts only temporary executable packages.
+No recovery Linux is used by this implementation. It writes eMMC directly
+from compiled Lean, using the existing bounded FCIE register adapter.
+
+Supported target
+----------------
+Component 2 is an EROFS/LZ4 application filesystem containing the existing
+G13 APP_BINARIES and share assets. The normal OS mounts bin and share read-only.
+Settings, save data, the existing Doom WAD, platform media helpers and the
+kernel/initramfs are outside this image. It therefore repairs/replaces apps
+even when they cannot start; it does not repair a damaged Linux kernel or
+resident gate. Component 1 retains signed temporary bootloader execution.
+
+The receiver requires Ed25519 under its compiled key, exact board/component,
+canonical header, correct SHA-256 and a strictly increasing stored version.
+The first image is also signed. Read errors abort. The inactive bank is
+invalidated and flushed before payload writes; its signed header is committed
+only after full storage readback verification. A lost final ACK can be retried
+without flashing twice. After acceptance, normal boot uses the new image.
+
+The normal bootloader fallback still boots the same native OS using MBOOT's
+inputs. The new gate offers Ethernet on that path too, before validating the
+normal kernel. Do not continuously offer a known-bad signed development
+bootloader. The resident Stage0/gate must remain intact to reach the updater.
+
+Fixed layout: upgrade starts at absolute sector 0x308800, length 0x19000.
+  Bank 0 starts 0x309000: partition byte offset 1048576.
+  Bank 1 starts 0x311000: partition byte offset 17825792.
+  Each bank is 16777216 bytes: header sector + at most 16776704 image bytes.
+  Payload mount offsets are respectively 1049088 and 17826304 bytes.
+  Both banks end before 0x319000. The boot journal 0x3217fe/0x3217ff,
+  the first MiB and the remainder of upgrade are not writable by this adapter.
+
+Preparing the deployment
+------------------------
+Read RECOVERY_NOTES.txt and the current G13 development/boot records first.
+Do not treat upgrade as free space: it is also vendor OTA workspace. Before
+installing this candidate, capture a fresh full upgrade backup, verify its
+50 MiB size/start sector and retain its hash. Reserve these extents exclusively
+for app images and disable/confine every vendor OTA/postinstall writer that
+could reuse upgrade. That on-device provisioning has not been performed.
+
+Build the normal G13 apps as usual; build-apps.py uses the recorded paths in
+assets/build/native-app-g13/build.json and the current deployment app list.
+It does not include test executables found elsewhere in the Nix output.
+The recorded G13 kernel is 5.15.167 with EROFS and LZ4 enabled. The packer
+rejects incompatible features beyond lz4_0padding and verifies the filesystem.
+
+Local build/check commands (no device access):
+  nix develop .#bootloader
+  python3 tools/bootloader/build.py
+  python3 tools/bootloader/update/build-network.py --public-key assets/private/network-boot/public.raw
+  python3 tools/bootloader/prove.py
+  python3 tools/bootloader/update/audit-network.py
+  python3 tools/bootloader/update/check-flash.py --key assets/private/network-boot/signing.pem
+  python3 tools/bootloader/update/check-flash-hardware.py --key assets/private/network-boot/signing.pem
+  python3 tools/bootloader/update/check-network.py --key assets/private/network-boot/signing.pem
+  python3 tools/bootloader/update/check-network-gate.py
+  python3 tools/bootloader/update/check-send.py
+  python3 tools/bootloader/update/build-apps.py --key assets/private/network-boot/signing.pem --version 1
+
+On-device deployment remains a separate operation: stage the mount helper
+using tools/native-app/g13-boot.py appimages, then test the exact candidate
+through the existing RAM boot workflow before replacing the resident boot
+prefix. Stage0/mboot and the existing recovery artifacts must be preserved.
+install-network.py intentionally retains its old exact-state/RAM-trial pins;
+do not bypass them or present that historical installer as ready for this
+new candidate. Live state, reservation and same-image trial must be checked.
+
+After that deployment, an ordinary update needs only Ethernet and a restart:
+  python3 tools/bootloader/update/build-apps.py --key assets/private/network-boot/signing.pem --version 2
+  python3 tools/bootloader/update/send.py assets/build/leanboot-apps/apps.lbu --host 192.168.77.3 --wait 60
+Start the sender before restarting the TV. No UART command or running ADB is
+required by the transfer. UART remains useful for diagnosis. The final Seal
+retries while waiting for flash/readback, with a separate --commit-timeout
+(default 600 s total). Do not cut power intentionally during physical validation.
+
+Authenticity is not an application health check. There is no automatic
+app-health rollback, and the third-start bootloader escape does not select
+an older app bank. If a signed release is broken, sign known-good app contents
+with a higher release number and send them on the next full restart. The
+update receiver does not depend on the broken apps starting successfully.
+
+Proofs and limits
+-----------------
+Update/FlashProofs.lean proves the fixed sector bounds and journal exclusion,
+rejection before address use, and signature/readback prerequisites for commit.
+rejected_signature_only_rejects is equality of the real effectful
+installManifest program with a pure error, assuming a verifier action equal
+to pure false. It includes insufficient workspace and is not merely a named
+stage in a model. Earlier invalid-input guards reject before writing too.
+rejected_payload_performs_no_writes also unfolds the actual installer: a
+valid signature cannot authorize a payload whose digest is rejected.
+sector_exact and different_banks_disjoint rule out arithmetic wrap and bank
+aliasing. StorageModel proves preservation of the other bank and journal for
+arbitrary finite write/flush/power-loss traces, including arbitrary torn bytes,
+assuming a failed sector operation cannot corrupt an unrelated sector. It
+also proves that a completed abstract flush leaves no pending torn write.
+This is not a proof that the card implements that durability contract.
+Existing Policy/Flow/Receiver proofs cover newer versions, other-bank targets,
+authentication ordering, complete reception and bounded non-wrapping appends.
+
+check-flash.py executes the real ARM parser, crypto, installer and FCIE driver
+against register/card models. It checks first provisioning, bank alternation,
+forged/tampered images, card-state/DMA guards, read errors, readback corruption,
+torn writes, Ethernet framing, duplicate commit ACKs and the FDT handoff.
+check-flash-hardware.py additionally delays command/DMA/card completion,
+models writes as volatile while busy, injects R1 errors and timeouts, checks
+post-error reset isolation, and tears arbitrary bits during each write's busy
+phase. Its register meanings and partition extents are checked against saved
+vendor definitions and exact-target backup metadata. Reads as well as writes
+must verify EXT_CSD to avoid authenticating a different hardware partition.
+These tests do not establish electrical behavior or media durability. The
+flush contract assumes disabled card cache plus completed CMD24/DAT0 ready.
+HACL*, compiler/DSL, physical memory ownership and hardware semantics remain
+trusted. No protected monotonic version counter or immutable secure boot is
+claimed; erasing/restoring both banks loses the software version history.

@@ -1,0 +1,15 @@
+[package]
+name = "flighttv"
+version = "0.1.0"
+edition = "2021"
+description = "City flight demo (uyhcire/vibecheck-tsa) on the TV: software renderer, remote controls, Lean JSBSim plant and safety filter"
+
+[dependencies]
+font8x8 = { version = "0.3", default-features = false }
+cityflight = { path = "../third_party/cityflight", default-features = false }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+platform = { path = "../platform" }
+# The Lean JSBSim plant and the exact-rollout filter exist only for the TV build.
+cityflight = { path = "../third_party/cityflight", default-features = false, features = ["jsb"] }

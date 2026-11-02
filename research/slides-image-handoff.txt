@@ -1,0 +1,74 @@
+Slides image support checkpoint — 2026-10-31
+Worktree /Users/d4hines/repos/dande-tv/agent1, branch d4hines/agent1.
+No commit, no TV action, no external service access.
+
+Finding
+-------
+Image support already existed. A standalone Markdown line
+  ![Caption](relative/path.png)
+references a local image relative to src/slides/hackathon.md. The build host
+uses ffmpeg to convert its first frame to RGBA, preserving aspect ratio,
+downscaling (never upscaling) to at most 1088x420. The generated static deck
+embeds the bytes. Runtime code needs no PNG/JPEG decoder or additional crate;
+it scales/blends RGBA and draws the caption. Paths cannot contain whitespace;
+inline images are rejected. Source formats are those ffmpeg can decode.
+
+The production deck has no image references. testdata/features.md references
+its existing testcard.png, but previous tests only parsed this line: they did
+not exercise conversion or image rendering.
+
+Changes (only src/slides)
+------------------------
+- image_build.rs: new host-only helper shared by build.rs and unit tests.
+  Validates exact P7/8-bit/RGBA contract, positive bounded dimensions,
+  duplicate fields and exact payload length, with checked multiplication.
+  Conversion now passes -nostdin to ffmpeg for automated builds.
+- build.rs calls the helper and preserves FILE:LINE failure diagnostics.
+- src/lib.rs includes the helper under cfg(test) only. No conversion code
+  or external process launcher is added to the TV runtime.
+- src/render.rs fixes bilinear interpolation of transparent images:
+  interpolate premultiplied colour so hidden RGB under a transparent pixel
+  cannot tint an adjacent visible pixel. Output remains ordinary RGBA.
+- Added host tests for malformed/truncated/oversized PAM, transparent-edge
+  colour correctness, and PNG -> conversion -> image block -> full renderer.
+  The PNG test also creates an inspectable slide preview in assets/.
+
+Verification
+------------
+cargo test -p slides: 11/11 passed, including existing deck/renderer tests.
+Both release builds passed (armv7-unknown-linux-musleabihf and
+ aarch64-unknown-linux-musl). No decoder/workspace files were changed.
+git diff --check -- src/slides passed.
+
+A separate generated fixture crate under assets/build/slides-image-fixture
+compiled testdata/features.md as its actual deck, exercising build.rs and
+include_bytes of a real image. Its separate target directory preserved the
+production slides binary. Copied the fixture executable to the distinct
+artifact name slides-image-check and booted it with the existing harness:
+  python3 test/run.py faithful --bin slides-image-check --headless --no-build \
+    --extra slides.start=5 --at 4:shot:image --at 6:key:esc --timeout 15
+ARM32 guest: compatibility trampoline passed; seccomp installed; image slide
+5/6 rendered; screenshot captured; Esc quit and QEMU powered off, exit 0.
+The screenshot was visually inspected: testcard and caption are fully visible.
+
+Evidence:
+ assets/build/qemu-runs/slides-image-check-faithful-20261031T182118-1793496078464012000/
+   image.png, serial.log, fidelity.json
+ assets/build/slides-images/image-slide.png (host renderer preview)
+ assets/build/slides-images/testcard.pam
+ assets/build/slides-image-fixture/ (generated isolated test source)
+ assets/build/slides-image-fixture-target/ (isolated test build output)
+
+Size and limitations
+--------------------
+No runtime dependencies added. Production deck/binary contains no new image.
+Measured release binary sizes before -> after changes:
+ ARM32: 2,392,532 -> 2,392,572 bytes (+40).
+ ARM64: 2,421,952 -> 2,422,272 bytes (+320).
+Each embedded image costs width*height*4 bytes before executable compression;
+the 400x224 testcard is 358,400 raw bytes. Conversion/parser validation is
+host-only. The future Lean runtime image boundary remains RGBA bytes,
+dimensions, bilinear sampling and alpha blending. Fonts/text remain separate.
+QEMU evidence establishes rendering through virtio-fbdev, not real MediaTek
+panel initialization. No hardware claim. No additional work is pending for
+this request; user can already insert local images in the production deck.

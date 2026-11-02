@@ -1,0 +1,20 @@
+name = "H264InterTest"
+defaultTargets = ["H264InterTest", "transcript", "check"]
+
+[[require]]
+name = "Yt"
+path = "../../../../src/lean/yt"
+
+[[lean_lib]]
+name = "H264InterTest"
+
+# Transcript (host side of zr-build transcript).
+[[lean_exe]]
+name = "transcript"
+root = "Main"
+
+# Host-only: compare every function with FFmpeg's C on the generated vectors
+# (assets/build/lean-h264-inter/vectors.bin, see Check.lean).
+[[lean_exe]]
+name = "check"
+root = "Check"

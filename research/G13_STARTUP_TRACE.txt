@@ -1,0 +1,226 @@
+G13 / T221T10 V013: startup and recovery entry map
+2026-11-01 UTC
+
+Scope
+
+Offline analysis of this unit's stock backup, the saved patched init_boot,
+and archived serial output. No serial port, USB block device, TV connection,
+or live boot state was changed. The user confirms that UART input does not
+work after the disable point; this analysis does not propose retrying Enter.
+
+The backup predates the failed init_boot_a experiment and later V033 USB
+trial. Current installed contents and slot metadata have not been read back.
+V033 trial failure does not establish that no update writes occurred.
+
+Sources and verification
+
+  assets/backups/g13-v013-stock-20261031/
+  assets/research/g13-magisk-v31.1-20261031/
+  assets/research/g13-uart-entry/
+  assets/research/g13-baremetal/
+  assets/research/g13-startup-trace-20261101/       new generated evidence
+  research/recovery-probe/inspect-g13-startup.py   new offline disassembler
+
+source-audit.json records fresh SHA256 checks against the backup SHA256SUMS
+for 17 relevant images. Both MPOOL environment CRCs pass. MBOOT, MBOOT_b and
+MBOOTBAK are identical. The backup's A/B pairs for boot, init_boot, vendor_boot
+and vbmeta are also identical. This does not describe their current TV state.
+
+MBOOT SHA256:
+  643058879b84d044dea58a4572bd9ade1cc3140f3d3357eeaabae53be32ec382
+mmcblk0boot0 SHA256:
+  5ad07b30f93e8d36867d3c247907122672316634eba1e209b031419a3dfaac76
+
+MBOOT linked VA = file offset + 0x273fdc00.
+Readable boot0 loader body VA = file offset + 0x1fbf2000, starting at file
+0xe000. This mapping agrees with internal branch pointers and pointers to
+the exact G131, date/version and BIST strings. Addresses are linked addresses;
+the running loader may relocate. Linear disassembly also decodes data and
+is not, by itself, a reachability proof.
+
+1. Reset and the first loader
+
+The on-chip BootROM is not part of the eMMC backup. Its exact recovery-mode
+selection and any ROM-only handshake cannot be reconstructed from this dump.
+The saved first serial marker is UART_115200, followed by AC_ON, the
+01-2L-SM-04-20211227 version, 1ST, MIU0_DQS-OK, BIST0-OK and G131.
+The individual producer of every early marker has not been identified.
+
+The hardware boot0 image contains readable ARM and Thumb loader routines,
+padding, tables and opaque payloads. G131 is at file 0x16ad0; the version
+string is at 0x16aa5 and BIST0- at 0x16b2d. The boot1 backup is all zero.
+Do not treat the zero hardware boot1 area as Android's populated slot B.
+
+Fresh early-UART investigation found these concrete output routines:
+
+  boot0 file 0xe304:  write char to 0x1f201300, wait on 0x1f201328 & 0x60.
+  boot0 file 0xe320:  output a two-byte-stride character string, same registers.
+  boot0 file 0xf36c:  output char, wait for TX, add CR after LF.
+  boot0 file 0x136ac: wait on TX readiness bit 0x20, write char, wait on 0x60.
+  boot0 file 0x1a0c4: output an ASCII digit.
+  boot0 file 0x1a0d4: output a character directly.
+
+These are transmit routines, not receive handshakes. No usable early receive
+handshake was identified in this pass. This is a bounded negative result:
+the ROM, opaque payloads, indirect calls and untraced code remain outside
+that conclusion. It is not proof that the chip has no other recovery mode.
+
+Evidence: boot0-arm-entry.txt, boot0-thumb-drivers.txt and
+boot0-thumb-tail.txt in the new evidence directory.
+
+2. Secure-loader handoff and MBOOT selection
+
+The archived trace continues through optee teeloader entry, authentication /
+decryption messages for reeloader and CKB, ns_uboot_boot, BL3-1 initialization,
+BL3-2 initialization and the exit to normal world. It then prints ree_entry,
+loads A/B metadata, and reports Select mboot A before the U-Boot banner.
+
+This ordering is observed in the log; it is not a complete disassembly of
+those secure stages. Arrival at the MBOOT banner establishes that these
+earlier stages handed off far enough to run MBOOT in the captured startup.
+It does not establish that all firmware or storage is intact.
+
+MBOOT selection here is earlier than Android boot/init_boot slot handling.
+Do not collapse hardware boot areas, MBOOT copies and Android A/B slots into
+one interchangeable backup-selection mechanism.
+
+3. MBOOT board initialization and deliberate UART shutdown
+
+Observed banner: U-Boot 2011.06 (Aug 14 2025 - 23:40:21).
+It initializes IR, relocates, identifies eMMC, reports 1024MB DRAM and SAR5,
+and selects serial for stdin/stdout/stderr.
+
+board_init_r calls console_init_r at linked 0x274af75c.
+console_init_r starts at 0x274c04c8. At 0x274c0638 it resolves UARTOnOff;
+the off branch prints UART BUS OFF and calls 0x2745cecc.
+That routine ORs 0xf into RIU base + 0x203d4c and returns.
+
+Both saved environments contain UARTOnOff=off. This is a deliberate hardware
+routing change, consistent with the observed loss of input/output. It is
+not a captured crash and does not imply that execution stops at that line.
+Exact HAL_UART_Connect uses the same selector for the disabled-port value;
+see research/G13_MAGISK_NOTES.txt for the prior HAL analysis and its limits.
+
+4. Silent MBOOT initialization and boot-mode inputs
+
+After console_init_r, board_init_r continues initialization and calls
+MstarInit (0x2745c970). main_loop begins at 0x274c95b8, calls MstarProcess
+(0x276312c0), then performs its serial autoboot check. The saved environment
+has no bootdelay; the code uses zero in that case. The abort branch only
+changes logging/parser state; it does not undo the hardware UART shutdown.
+
+MstarProcess registers command phases. Phase 1 runs preparation including
+checkUsbModeSwitch. After the serial check, main_loop calls MstarToKernel
+(0x27631518), whose phase 2 starts with bootcheck. Its registration at
+0x274a027c includes bootcheck, watchdog handling, standby handling,
+panel preparation, readKL and bootKL. These steps run after UART goes quiet.
+
+bootcheck (0x2742b6c0) consumes boot-mode state and can inspect the physical
+keypad/IR. The UART gate does not itself disable these input paths.
+
+The exact keypad dispatcher at 0x2742b130 recognizes:
+  key 0x74: Power; held for more than 1099 timer units (the code formats these
+            as milliseconds), requests USB-upgrade mode 4.
+  key 0x15: UART-enable mode 12.
+  key 0x46: mode 13, whose handler enters mstar_usb after panel preparation.
+  others:   no special mode in this dispatcher.
+
+The compiled active-channel candidate contains 0x74, 0x15, 0x04, 0x16 and
+0xff, not 0x46. Thus the existence of mode 13 does not demonstrate a physical
+Fastboot button combination on this TV. Nor are these UART ASCII commands.
+The previously traced dynamic IR map has no mode-12 UART-enable entry.
+
+The mode-12 handler at 0x2742bc30 executes:
+  setenv UARTOnOff on
+  saveenv
+  print Opening UART now
+
+It runs after the gate, but does not need serial input. It changes the saved
+environment, not the current mux. Its useful success criterion is a later
+startup continuing to emit logs beyond the old cutoff; the immediate print
+may remain invisible. This is the strongest explicit UART-enable branch
+found in the exact firmware, not a physically demonstrated trigger.
+
+The prior exact decoder emulation maps ten consistent SAR0 ADC readings of
+30..60 to key 0x15. Both saved environments lack keypad map overrides. The
+actual switch/SAR connection, voltage reference and loaded voltage still
+need measurement before attempting a circuit stimulus. Ordinary Power
+press timing does not synthesize that intermediate analog value.
+
+5. USB branches: bootloader service update versus installed recovery
+
+The USB-upgrade dispatch can invoke custar. Its service-package path uses
+authenticated ustar processing. This executes in MBOOT and could avoid the
+damaged Android init path if a valid compatible service package were found.
+No verified exact service package is available in the recorded investigation.
+
+The OTA ZIP branch instead requests installed recovery through the BCB.
+The special FAT-label arguments affect that recovery request; they do not
+make the USB stick an independent boot image. The ordinary-label control and
+the real V033 OTA attempt have already failed to show a usable recovery UI.
+This trace does not justify repeating those trials or renaming a raw backup
+as a service package.
+
+6. Android image and ramdisk assembly
+
+For this stock layout, boot_a contains the kernel with zero generic ramdisk.
+vendor_boot_a contains one vendor ramdisk fragment, type 1 / platform, plus
+DTB and bootconfig. The extracted vendor archive includes recovery files.
+There is no separate recovery partition in the backup geometry.
+
+readKL_dtb's v4 path reads vendor_boot and assembles its selected fragments.
+Control flows to 0x27452570, where it constructs init_boot plus the selected
+slot suffix. It reads that header and appends its generic ramdisk at
+0x27452660..0x2745267c. The code does not skip this append merely because
+recovery was requested. In this image there is only one vendor fragment.
+
+The extracted stock generic archive's /init is a 2,201,444-byte ARM ELF.
+The saved patched archive's /init is a 148,776-byte ARM ELF (Magisk init).
+Both image ramdisks use legacy LZ4; the stock kernel has CONFIG_RD_LZ4=y.
+This rules out a simple unsupported compression-format explanation, not a
+later unpacking, AVB, Magisk-init, mount or recovery failure.
+
+Consequently, requesting installed recovery does not bypass the modified
+generic /init. This explains why recovery is not an independent fallback
+for this particular modification; it does not prove the actual failure site.
+Follow-up: Magisk v31.1 deliberately restores stock init when it recognizes
+recovery. That saved init was freshly verified intact, and the exact MBOOT
+recovery flag transition passes. See G13_RECOVERY_PATH.txt; shared loading
+alone must not be taken as a diagnosis that Magisk prevents recovery.
+
+7. Kernel / init / Android or recovery
+
+MBOOT prepares the kernel arguments, device tree and combined ramdisk and
+transfers control toward Linux. The orange warning is rendered by MBOOT;
+it is not proof Linux reached /init. The known warning-suppression branch
+for recovery likewise does not prove that recovery userspace started.
+
+No captured post-gate log establishes whether this TV currently fails during
+image verification/loading, the kernel, Magisk /init, mounts or recovery.
+Backlight alone cannot distinguish these stages. The observed automatic
+restarts establish repeated startups, not the resetting component.
+
+Fresh execution of the existing exact-ARM A/B audit with the saved misc data
+again selects A ten times without changing its successful flag or retry
+count. An allowed verification-error fixture also selects A. A synthetic
+unbootable-A control selects B. These tests stub AVB verification; they do
+not verify the patched image or current metadata. They show why repeated
+resets do not guarantee automatic fallback from the saved successful A state.
+
+Practical synchronization points and the remaining boundary
+
+  G131 / U-Boot banner: identifies loader progress and repeated startups.
+  UART BUS OFF: identifies the deliberate gate, not a command window.
+  Physical-key scan in bootcheck: a non-UART intervention point after gate.
+  Continued output on the next boot: criterion for UART-enable success.
+  USB Fastboot enumeration: criterion for usable bootloader transport.
+  Orange warning / backlight: coarse display milestones, not Linux success.
+
+The archived Screen stream has no per-byte timestamps. It cannot yield a
+reliable delay in milliseconds for sending a command or changing a signal.
+No serial synchronization sequence has been established by this analysis.
+
+Recovery remains pending a working control interface. Before any restore,
+reidentify the TV and read its current slot/firmware state as far as possible:
+the V033 trial means a V013-only rollback must not be assumed safe without
+checking whether a mixed-version state was created.

@@ -1,0 +1,147 @@
+G13 V013: stock-init debug ramdisk for adb root
+2026-11-01 UTC
+
+AUTHORIZATION AND CURRENT STATE
+
+The owner confirmed the stock init_boot_a restoration returned normal TV
+operation, then explicitly requested rooting again, preferably adb root or
+working su. The earlier Magisk image is not reused.
+
+ADB ROOT IS VERIFIED at 2026-11-01T08:58Z. The modified init_boot_a was
+flashed successfully at approximately 08:56Z. Normal fastboot reboot first
+entered standby in MBOOT; after the owner pressed Power once, Android
+booted successfully. adb root returned "restarting adbd as root", and a
+fresh ADB shell reported uid=0(root), context=u:r:su:s0. Final checks show
+sys.boot_completed=1, bootanim stopped, slot _a and AU13. A privileged
+SHA256 read of the entire live init_boot_a partition exactly matches the
+candidate hash below. No additional reboot or partition write was needed.
+
+SELinux reports Enforcing; the policy deliberately makes the su domain
+permissive. ro.adb.secure=1 and ro.secure=1 remain set. ro.debuggable=1 and
+ro.force.debuggable=1 are active. The temporary policy-transfer archive
+/data/local/tmp/g13-root-policy.tgz was removed. ADB is left running as root.
+
+Evidence: assets/research/g13-adb-root-20261101/root-verification.json,
+verified-boot.bin/.txt, device-test.json and running-selinux-policy.
+This verifies one successful startup from the flashed image and root on
+that startup; a second reboot/power-cycle was not performed.
+
+Before the candidate flash, USB ADB returned after restarting the laptop's
+stale ADB server. Live checks confirmed V8-T221T10-LF1V013 / AU13,
+boot_completed=1, slot _a, unlocked/orange, SELinux Enforcing,
+ro.debuggable=0, ro.adb.secure=1 and a uid2000 ADB shell. adb root returned
+the production-build refusal. ADB serial: 18ACC22D1C47.
+
+Screen 49213.tv-uart remains the sole UART reader on /dev/ttyUSB0, 115200 8N1,
+no flow control. Log: assets/research/device/screen-uart-20261101T083737Z.log.
+Do not open a competing reader. No Enter catcher is running.
+
+USAGE
+
+From the connected laptop:
+  adb -s 18ACC22D1C47 root
+  adb -s 18ACC22D1C47 shell
+
+For a single root command:
+  adb -s 18ACC22D1C47 shell id
+
+The modification is stored in init_boot_a. Request adb root again after a
+restart if ADB has returned to the shell user. An update replacing this
+image or a switch to an unmodified slot can remove the capability. There
+is no su executable or Magisk manager installed by this change; apps do
+not gain an su interface. adb unroot is the standard way to return adbd to
+its ordinary shell identity without restoring the firmware image.
+
+MECHANISM
+
+The stock generic init contains /force_debuggable, /adb_debug.prop,
+INIT_FORCE_DEBUGGABLE, /debug_ramdisk/adb_debug.prop and the userdebug CIL
+paths. Android 14 first_stage_init.cpp copies the optional debug files into
+the debug ramdisk, and selinux.cpp selects its platform policy when the
+device is unlocked. property_service.cpp loads the debug properties last.
+
+The live adbd APEX init service runs its binary with
+--root_seclabel=u:r:su:s0 and user root. Its normal privilege drop depends on
+ro.secure, debuggability and service.adb.root. Stock platform policy contains
+the su type but lacks adbd's dynamic transition into it. The candidate adds:
+  (allow adbd self (process (setcurrent)))
+  (allow adbd su (process (dyntransition)))
+  (typepermissive su)
+
+This deliberately makes only the root shell's su domain permissive. Other
+Android domains remain enforcing; this is not a globally permissive policy.
+The debug properties are only:
+  ro.debuggable=1
+  ro.force.debuggable=1
+ADB key authentication stays enabled (stock ro.adb.secure=1). The image does
+not set ro.secure=0, automatically request root, or install a su executable.
+The intended interface is adb root, followed by adb shell as uid0.
+
+Only three files are added to a copy of stock init_boot_a's ramdisk:
+  force_debuggable
+  adb_debug.prop
+  userdebug_plat_sepolicy.cil
+All 22 existing entries, their order, metadata and bytes are preserved,
+including the original TCL init. Kernel, vendor_boot, vbmeta, other slots
+and userdata are not flashed. The unlocked state remains required.
+
+SOURCE AND VALIDATION
+
+Original image: assets/backups/g13-v013-stock-20261031/init_boot_a.img
+Size 8388608; SHA256:
+  ba21e944050398f71b9d137f4c569e930dd912f94aa50d44392aa94f61dfa0b9
+Original init SHA256:
+  18b79298c5d1868d7b5b3bf77f69b664dc824b0120e47b0d663616d3febce75a
+Live platform CIL SHA256:
+  22a4ead533008aeed1bd698c05b6a07259b4540bdd0df44935c4079eb8cc81f5
+Candidate size 8388608; SHA256:
+  afc34332ba1b0f4b737eecdc512016e94bb3b9c058c920f411ef53c0393a70a4
+
+Artifacts: assets/research/g13-adb-root-20261101/.
+The platform CIL and matching policy bundle were captured over UART while
+ADB was unavailable; host hashes matched TV hashes. The stock precompiled
+policy was later pulled over ADB and identifies policy version 30.
+Stock and modified CIL both compiled successfully with MLS enabled and
+matching platform mapping 34.0, system_ext, product, versioned-public and
+vendor policies. No optional ODM/APEX CIL files were present on the TV.
+The host compiler uses upstream SELinuxProject secilc.c and libsepol 3.11.
+Compiler commands/results are saved in stock-compile.json and
+debug-compile.json. No policy was loaded into the running TV during those
+offline checks.
+
+The image builder unpacks/recompresses using the saved host ARM64
+magiskboot executable only; it does not insert Magisk binaries. It reopens
+the final image, verifies all original entries and metadata, checks the
+three additions, partition size and unchanged header except ramdisk size.
+The packed CIL exactly matches the successfully compiled candidate input.
+Reproduce to a NEW output directory:
+  python3 research/g13-adb-root/build-image.py \
+    --stock assets/backups/g13-v013-stock-20261031/init_boot_a.img \
+    --policy assets/research/g13-adb-root-20261101/live-plat_sepolicy.cil \
+    --magiskboot assets/research/g13-magisk-v31.1-20261031/host-validation/magiskboot \
+    --output assets/research/g13-adb-root-20261101/candidate-new
+
+Reference sources (copies in the artifact aosp/ directory):
+  https://android.googlesource.com/platform/system/core/+/refs/tags/android-14.0.0_r1/init/first_stage_init.cpp
+  https://android.googlesource.com/platform/system/core/+/refs/tags/android-14.0.0_r1/init/selinux.cpp
+  https://android.googlesource.com/platform/system/core/+/refs/tags/android-14.0.0_r1/init/property_service.cpp
+  https://android.googlesource.com/platform/packages/modules/adb/+/refs/tags/android-14.0.0_r1/daemon/main.cpp
+
+ROLLBACK
+
+The exact stock image above has already restored normal operation on this
+TV. Re-identify the current Fastboot USB target before use:
+  fastboot -s <CURRENT_TARGET> flash init_boot_a assets/backups/g13-v013-stock-20261031/init_boot_a.img
+  fastboot -s <CURRENT_TARGET> reboot
+If Android is unavailable, the saved UART enable and Screen Enter catcher
+reach MBOOT; its mstar_usb command provides the proven USB Fastboot route.
+Do not repeat unlock, relock, erase userdata or use older G06 images.
+
+OFFLINE EXTRACTION LIMIT
+
+Local EROFS extraction from the backed-up super image failed decompression
+both in the host kernel and fsck.erofs. All temporary read-only mounts were
+unmounted. The reason has not been diagnosed; no system/vendor restore was
+attempted. The candidate uses independently captured LIVE policy files,
+not partially extracted offline files. Preserve this limitation when
+assessing broader backup-restoration readiness.

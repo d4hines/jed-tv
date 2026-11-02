@@ -1,0 +1,10 @@
+# Doom 1 / Ultimate: normal exits, secret exit into E?M9 and back, E?M8 victory finale
+e1_chain 1 1 2 1000 0 4000 11 300:n,1100:n,1900:s,2700:n
+e2_secret 2 3 3 1000 0 4000 12 300:s,1100:n,1900:n,2700:n
+e3_m9 3 9 2 1000 0 3000 13 300:n,1200:n
+e4_m5s 4 5 4 1000 0 3000 14 300:s,1200:n
+e1_victory 1 8 2 1000 0 6000 15 300:n
+e4_victory 4 8 3 1000 0 6000 16 200:n
+coop_e2 2 1 2 1110 0 3500 17 300:n,1300:n,2300:s
+coop_e3_m9 3 9 3 1111 0 3000 18 300:n
+dm_e1 1 2 2 1111 2 3000 19 300:n,1300:n

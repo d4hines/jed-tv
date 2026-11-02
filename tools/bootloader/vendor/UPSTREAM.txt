@@ -1,0 +1,23 @@
+Source: owner's local /home/eduardo/dande-router (private repository)
+Commit: 92afd549dd5404eab68b7d9e8b12cc1d1bc9d27e
+Imported 2026-11-01 with the owner's explicit permission to vendor needed bits.
+Lean toolchain: leanprover/lean4:v4.35.0 (matches this repository)
+
+Copies of src/lean/ZrAsm/{Isa,Print,Dsl}.lean. These are the
+instruction AST, assembly printer and construction DSL only. No Zynq board
+initialization, router runtime, drivers or other bootloader was imported.
+No standalone license notice was found in these files or at the source
+repository root; this file does not assign a new license or grant public
+redistribution permission. Preserve upstream notices if later supplied.
+
+Local patch: Isa/Print add only typed LDRH, STRH and SMC instruction cases
+and their assembly rendering. Dsl is unchanged. These are required for the
+G13 MIU pipe's 16-bit registers and the exact secure-monitor handoff.
+Original SHA256:
+  Isa   41d2eb31cd8e8eb95c67c5e6d5b4e43af98b7e6d6800c74e3dfb7f01aa299ed6
+  Print 11346e9cbce7df2dbbf5cf1fe04e0cf274843082714c70bd67abb2cec0af7497
+Patched hashes are pinned in tools/bootloader/build.py and build.json.
+
+The upstream loadSym documentation uses the phrase position independent,
+but MOVW/MOVT symbol halves are absolute after linking. This probe does not
+use loadSym. Its relocatability is checked on the final linked bytes.

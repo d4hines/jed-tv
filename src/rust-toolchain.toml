@@ -1,0 +1,4 @@
+[toolchain]
+# 1.80 (the machine default) cannot link build scripts against the macOS 27 SDK.
+channel = "1.92.0"
+targets = ["aarch64-unknown-linux-musl", "armv7-unknown-linux-musleabihf"]

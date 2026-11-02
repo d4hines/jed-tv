@@ -1,0 +1,27 @@
+[package]
+name = "g06-tee-provider"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "lib.rs"
+[[bin]]
+name = "g06-tee-provider-candidate"
+path = "main.rs"
+
+[dependencies]
+libc = { version = "0.2", default-features = false }
+g06-tee-rpc = { path = "../tee-rpc" }
+sha2 = { version = "0.10.9", default-features = false }
+
+[workspace]
+
+[profile.release]
+opt-level = "s"
+panic = "abort"
+strip = true
+
+[[example]]
+name = "firmware-replay"
+path = "../../test/fixtures/tee-firmware-replay.rs"

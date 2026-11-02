@@ -1,0 +1,48 @@
+name = "ZrTools"
+defaultTargets = ["zr-build", "zr-cgen", "zr-asm-gen", "zr-abi-gen", "zr-standard-headers", "zr-qemu32"]
+
+# Host tools for the Lean runtime (src/lean/zr): they build it, the apps and
+# the test binaries for the TV, and run those in QEMU. `lake -d tools/lean/zr
+# exe zr-build ...` from the repository root; see ZrBuild.lean.
+# ZrInitCheck.lean is a script: `lake env lean --run ZrInitCheck.lean`.
+[[require]]
+name = "ZrLean"
+path = "../../../src/lean/zr"
+
+# The runtime, apps and ARM tests: rt, app, link-check, transcript, timed,
+# conformance, profile.
+[[lean_exe]]
+name = "zr-build"
+root = "ZrBuild"
+
+# The runtime build's passes over the compiler's C: abi-normalize,
+# header-inline, fastpath, imports, the ZrLow check.
+[[lean_exe]]
+name = "zr-cgen"
+root = "ZrCGen"
+
+# The assembly written in Lean (ZrAsm), as GNU assembler files.
+[[lean_exe]]
+name = "zr-asm-gen"
+root = "ZrAsmGen"
+
+# The freestanding C headers, from ZrAbi.
+[[lean_exe]]
+name = "zr-abi-gen"
+root = "ZrAbiGen"
+
+[[lean_exe]]
+name = "zr-standard-headers"
+root = "ZrAbiStandardGen"
+
+# A 32-bit ARM binary as PID 1 in QEMU (the ARM tests).
+[[lean_exe]]
+name = "zr-qemu32"
+root = "ZrQemu32"
+
+[[lean_lib]]
+name = "ZrPaths"
+
+[[lean_exe]]
+name = "display-header"
+root = "ZrDisplayHeader"

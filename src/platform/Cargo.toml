@@ -1,0 +1,15 @@
+[package]
+name = "platform"
+version = "0.1.0"
+edition = "2021"
+description = "The platform API shared by the TV apps: fbdev display, ALSA audio, evdev input, PID 1 duties"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+libc = "0.2"
+
+[[test]]
+name = "pixels"
+path = "../../test/unit/platform-pixels.rs"

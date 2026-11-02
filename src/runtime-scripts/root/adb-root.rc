@@ -1,0 +1,9 @@
+on property:sys.boot_completed=1
+    start tv_adb_root_setup
+
+service tv_adb_root_setup /system/bin/sh ${MAGISKTMP}/tv-adb-root.sh ${MAGISKTMP}/magisk
+    user root
+    group root
+    seclabel u:r:magisk:s0
+    disabled
+    oneshot

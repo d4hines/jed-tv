@@ -1,0 +1,10 @@
+[package]
+build = "../../tools/doom/build.rs"
+name = "doomtv"
+version = "0.1.0"
+edition = "2021"
+description = "Doom (id Software's GPL engine via doomgeneric) as PID 1 on the TV platform"
+
+[dependencies]
+libc = "0.2"
+platform = { path = "../platform" }

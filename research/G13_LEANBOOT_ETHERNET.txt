@@ -1,0 +1,149 @@
+G13 V013: Ethernet from the Lean RAM bootloader
+2026-11-01 UTC
+=============================================
+
+Verified result
+---------------
+The separate Lean -> C -> ARM Ethernet payload exchanged packets on the real
+G13 while Linux was stopped. It called no MBOOT network functions. All 11 host
+checks passed on their first attempt: ARP and ICMP/UDP echo with payload sizes
+0, 1, 31, 256 and 1472 bytes. The largest IP packet was 1500 bytes (1514-byte
+Ethernet frame excluding FCS). UDP port is 7533; IP is 192.168.77.3; MAC remains
+the TV's 18:ac:c2:2d:1c:47. Host interface was enu1u3 / 192.168.77.1.
+
+This provides a transport foundation for future updates. It does not implement
+an update protocol, image authentication, eMMC writes or automatic installation.
+The experiment remains RAM-only. Installed MBOOT and stock early DRAM/secure
+initialization are retained; independent power-on from BootROM is not established.
+Cold PHY startup independent of the retained early MBOOT phase is not proven.
+
+Tested payload: 11900 bytes, SHA256
+  f878e8c62355bf304d1e0fce8da53efeca5c73ad915ffb8be370e7a7cfa32fa1
+Upload: 6978-byte raw LZ4 block plus 16 padding bytes via existing Screen/YMODEM;
+sender, RAM compressed CRC, decode and output CRC all verified. No direct serial
+reader competed with Screen 96550/window 0 on ttyUSB1 / FTDI AU0563JT.
+
+Evidence:
+  assets/research/g13-leanboot-ethernet/echo-20261101T214200Z/
+    result.txt, report.json, host.json, host.log, ethernet.pcap,
+    g13-ethernet.bin/.elf, build.json, boundary-audit.json, ethernet-check.json,
+    registers.bin, descriptors.bin, rx-first.bin, transactions.jsonl.
+Report: 12 frames received, 11 responses sent, return 0, MIU cleanup 0.
+One additional frame was received and ignored. The UART stop byte ended
+the session. MAC control readback was zero before the normal reset.
+
+Architecture and bounds
+-----------------------
+src/bootloader/Ethernet.lean is the deterministic Reader/Writer core. It takes
+an owned stable frame and separate output buffer, returning zero to discard or
+the exact response size. It checks spans, aliasing, Ethernet destinations,
+ARP layout, IPv4 length/checksum/fragment flags, ICMP checksum, and UDP length,
+port and optional input checksum. It emits a valid UDP checksum and preserves
+echo data. Unsupported frames are discarded. No hardware import is allowed.
+
+src/bootloader/Unsafe/Emac.lean owns the MAC/PHY registers, MDIO, DMA descriptors,
+barriers and polling. Hardware effects use HardwareM. CPU-owned RAM accesses
+are explicit MemoryM lifts. The core sees RX only after descriptor ownership
+is transferred to the CPU; a received descriptor cannot select arbitrary RAM.
+RX/TX are polled with IRQ/FIQ masked, with a finite poll/packet budget and UART
+abort. The budget is not a calibrated wall-clock timeout.
+
+The descriptor table is physical 26400000, RX buffers 26401000..26403000 and
+TX buffer 26404000. Four descriptors wrap back to the first. Each buffer is
+2 KiB. DMA addresses subtract MIU0 base 20000000; the CPU uses only uncached
+664... aliases after initial cache cleanup. The code and two data sections
+remain in the previously reserved bootloader experiment RAM below MBOOT's
+stack/heap. RX and TX are disabled and the MIU drained before normal return.
+MMIO bus faults/stalls and electrical failure remain outside software bounds.
+
+The exact observed TLB entries were 26400c0e at 297f0990 (cached mapping) and
+26400c06 at 297f1990 (uncached alias). Both are checked by the payload before
+DMA access. Bootstrap checks serial identity, relocation and stock cache helper
+CRC. See Unsafe/CONTRACTS.txt for all physical ownership/entry assumptions.
+
+The only new assembly is the seven-instruction private-stack entry and six
+instructions for interrupt save/mask/restore, all expressed through the existing
+ZrAsm DSL. Byte MMIO reuses existing load/store primitives with HardwareM types.
+The combined G13 targets now contain 97 authored instructions, and QEMU adds
+22. The audit checks all 23 private FFI declarations plus three entry stubs,
+absence of allocator/runtime imports, writable globals and external call targets.
+The existing g13-os.bin is byte-identical to the prior 23236-byte build:
+  2f486d9e306fca11c76844e6a4389f1d112aa96aa43f71d574f2477967229a2c
+
+Hardware findings and source provenance
+---------------------------------------
+The exact V013 MBOOT uses MAC base 1f204000. Each logical 32-bit register is
+two physical 32-bit accesses to low 16-bit halves at base+offset*2 and +4.
+MDIO uses standard management words at logical 34, status-idle bit 2 at 08,
+and management-enable bit 4 at 00. The integrated PHY returns ID words 0/0;
+its BMSR was 78c9 initially, and 78e9 at the successful trial's first snapshot.
+Link setup waits for auto-negotiation-complete and link bits, then chooses speed
+and duplex from local/partner advertisements. The successful physical link was
+100 Mbit/s full-duplex (MAC CFG 803). Zero PHY IDs are not an absence check.
+
+The 59 constant byte writes and two masked pinmux operations match execution
+of exact MBOOT function 2749fc18. Autonegotiation enable matches 2749fbd8.
+The public TCL GPL source provides a second readable reference:
+  https://github.com/TCLOpenSource/mt9221/tree/098aa173622fa59a5531b9b01d8f9fc3b0e539f8/drivers/mstar2/hal/mt5867/emac
+  drivers/mstar2/hal/mt5867/emac/mhal_emac.c and mhal_emac.h
+  drivers/mstar2/drv/emac/mdrv_emac.c
+This is an older Linux source release, not an exact source tree for our kernel.
+Downloaded files, URLs and SHA256s are retained in sources/manifest.json under
+assets/research/g13-leanboot-ethernet/. Exact backup MBOOT SHA256 is
+643058879b84d044dea58a4572bd9ade1cc3140f3d3357eeaabae53be32ec382.
+The offline comparison executes that backup's real machine code, not a mock
+copy of its recipe. The runtime recipe is authored Lean data in EmacConfig.lean.
+
+An initial run returned 26 before any MAC access. A diagnostic return established
+MBOOT's CPSR control byte is 13: ARM SVC with both interrupts enabled. The earlier
+refactored OS entry expected both masked; it has not been fixed or relabelled as
+hardware-tested here. Ethernet's outer driver now verifies ARM/SVC, saves/masks
+interrupts, runs strict admission/session checks, and restores control state on
+return. The initial rejection and the 0/0 PHY-ID discovery are retained under
+probe/, admission/ and phy-20261101T214109Z/. No persistent recovery request or
+boot selection was changed for these trials.
+
+Checks and reproduction
+------------------------
+  nix develop .#bootloader -c python3 tools/bootloader/build.py
+  nix develop .#bootloader -c python3 tools/bootloader/check-ethernet.py
+
+193 independent packet/bounds/checksum cases and six compiled ARM driver cases
+passed before the hardware trial, including busy-controller rejection, absent
+PHY/status, corrupt DMA pointer and MDIO timeout. All failure cases preserve
+caller SP and restore interrupts; the private stack observed up to 264 bytes.
+The strict older OS entry's six admission checks also passed unchanged.
+QEMU virt cannot model the G13 MAC/PHY; the Ethernet driver uses a guarded MMIO
+model under Unicorn, and actual hardware was used for packet validation.
+
+At an already stopped, freshly verified MBOOT prompt only:
+  nix develop .#bootloader -c python3 tools/bootloader/ethernet-tv.py --mode phy
+  nix develop .#bootloader -c python3 tools/bootloader/ethernet-tv.py --mode echo
+
+ethernet-tv.py is tied to the current Screen session/memory map and checks
+that the tested binary hash matches. The echo mode runs ethernet-host.py with
+sudo -n for CAP_NET_RAW on the direct cable. That process neither changes host
+network configuration nor installs software on the TV. Read RECOVERY_NOTES.txt
+and G13_LEAN_BOOTLOADER.txt before boot-state changes. A UART connection is still
+required to enter/upload the experiment; persistent standalone entry is separate.
+
+Normal startup after the experiment
+----------------------------------
+MAC RX/TX were disabled, then a normal MBOOT reset started the installed native
+OS. UART reached READY at +18.86s. No physical Power press was needed. Further
+identity/network/partition verification is recorded under restore/ alongside
+the full reset serial capture. Final verification details are appended below.
+
+Verified native restoration: boot ID c12bd7f4-a828-4039-84d4-dc77f0651b03,
+slot _a, authenticated root ADB at 192.168.77.3:5555, Wi-Fi 192.168.4.11.
+tvinit, SurfaceFlinger and audioserver are running; no system_server process
+was present. Host proxy/replay forwarding was restored with run-g13.py
+--network-only. Full-partition SHA256 readbacks matched the pre-experiment
+installed images:
+  init_boot_a  0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b
+  MBOOT        a342fcdd62b2ce7121d977b9410d2c05aa51757bf7d26d6b445423e97122439b
+  MBOOT_b      643058879b84d044dea58a4572bd9ade1cc3140f3d3357eeaabae53be32ec382
+  MBOOTBAK     643058879b84d044dea58a4572bd9ade1cc3140f3d3357eeaabae53be32ec382
+These checks cover those four partitions, not every storage byte. The assistant
+issued no partition-write or save-environment command. MBOOT's ordinary startup
+may perform its own environment maintenance, as in earlier RAM experiments.

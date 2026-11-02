@@ -1,0 +1,82 @@
+normal
+load
+menu-apps 55
+home
+start 2
+show 2
+forward 2 103 1
+forward 2 103 2
+forward 2 103 0
+home
+signal 2 15
+tell 2 2
+menu-key 0 0 1
+signal 2 9
+home
+save 1234 54
+menu-apps 54
+tell 1 1
+tell 0 0
+save 1234 55
+menu-apps 55
+tell 0 0
+save 4321 55
+menu-apps 55
+start 1
+show 1
+power-off
+home
+signal 1 15
+home
+tell 0 0
+save 6789 55
+menu-apps 55
+stopped
+save-failure
+load
+menu-apps 55
+home
+start 2
+show 2
+home
+signal 2 15
+save 1234 53
+stopped
+unreadable-policy
+load
+menu-apps 0
+home
+tell 1 2
+stopped
+invalid-pin
+load
+menu-apps 0
+home
+tell 1 2
+stopped
+finite-volume
+volume-write 90000
+volume-show 90000
+volume-state 90000 75000
+volume-write 0
+volume-show 0
+volume-state 0 90000
+volume-state 0 90000
+volume-write 90000
+volume-show 90000
+volume-state 90000 90000
+volume-show 123456
+volume-state 123456 90000
+volume-write 105000
+volume-show 105000
+volume-state 105000 90000
+volume-write 0
+volume-show 0
+volume-state 0 105000
+volume-write 15000
+volume-state 0 105000
+volume-write 105000
+volume-show 105000
+volume-state 105000 105000
+references passed
+float32 passed

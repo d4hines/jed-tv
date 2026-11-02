@@ -1,0 +1,149 @@
+G13 research handoff: available capabilities
+2026-11-01
+
+Checkpoint
+----------
+This describes the G13 research checkpoint through c60b635, rebased onto
+main revision 76c5a57. It is a status reference, with no assigned tasks or
+execution plan.
+The companion G13_RESEARCH_ARTIFACTS.txt identifies the tools, saved results
+and detailed reproduction references.
+For the current kernel/VM artifact locations, ARM64 assessment and boundaries
+for a later physical trial, start with G13_KERNEL_HANDOFF.txt. The older
+checkpoint described below is retained as historical context.
+
+Subsequent kernel experiment: research/g13-kernel-vm/README.txt documents
+the VM-built ARM32 5.15.224 port. It passes the twelve Android 16 native
+checks plus six kernel/module checks in QEMU. A fresh source replay and
+six additional compile targets pass. All 33 saved ARM32 modules in each
+of V013 and V033 have CRC mismatches against that kernel; attempted loads
+of the two stock devnode modules are rejected. This is an offline result
+and has not replaced the TV installation.
+
+Subsequent driver investigation: research/g13-module-compat/README.txt
+documents recovery of the actual V013/V033 headers from kheaders.ko and
+exact reproduction of their module_layout CRC. The stock task_struct is
+2,432 bytes versus 1,920 in the source-built kernel; stock Mali code uses
+the incompatible task-reference offset. The notes identify the display/
+audio dependency closure and distinguish missing TCL features from later
+kernel changes. No TV access or kernel alteration was needed for this work.
+
+The recent kernel, Android 16, V033 and firmware-inventory work was offline.
+Physical-TV results below come from earlier saved G13 tests. The handoff
+itself involved documentation and inspection of existing records only.
+
+Available now
+-------------
+1. A source-built MT5867 Linux kernel that reaches userspace in QEMU.
+   The baseline is Linux 5.15.148 from the pinned public OnePlus MT5867
+   source tree, built with captured G13 configuration and device-tree input.
+   It reaches BusyBox PID 1, brings four CPUs online, executes children and
+   passes timer/tmpfs checks. The build produces Image, device trees and
+   19 modules. This is a usable source-build/emulation experiment; it is not
+   the exact source of the installed TCL kernel.
+
+2. An updated source kernel with a small Android 16 native userspace.
+   The vendor tree has been integrated with pinned Android-common changes
+   to Linux 5.15.220. Its saved QEMU run passes all 12 required markers:
+   Android init as PID 1, real properties and a property-triggered action,
+   Bionic shell/threads/sockets, four CPUs, Binder service publication and
+   round trips, 512 concurrent Binder transactions, and shared-memory IPC.
+   The 4 KiB memfd test verifies data modified through the Binder service.
+
+   The Android subset contains 48 ELF files / 13,916,704 bytes. The complete
+   compressed test initramfs is 8,335,081 bytes, including its BusyBox/glibc
+   bootstrap. The kernel and test probe are built from source; the Android
+   binaries are extracted from a pinned TrebleDroid Android 16 prerelease.
+   A full AOSP checkout was not required for this result. The donor has a
+   June 2025 security patch level, not a demonstrated current patch level.
+
+3. Offline inspection of the exact-platform V033 update.
+   The retained T221T10 V033 package has passed whole-file signature checks
+   against the captured V013 recovery certificate, archive CRC checks and
+   all 19 payload partition size/hash checks. Its eight EROFS filesystems
+   are extracted and readable with the pinned legacy EROFS reader.
+   It contains Android 14 / AU21 and Linux 5.15.180-android14-11.
+
+   Existing checks execute the Lean image parsers and image preparation
+   against the V033 bytes, and emulate the vendor postinstall helper's ARM
+   logic with mocked environment/storage interfaces. Policy compilation
+   also passes with matching V033 files. These checks do not execute the
+   V033 kernel or reproduce the bootloader's actual update writes.
+
+4. A measured inventory of G13 firmware reduction candidates.
+   Both V013 and V033 have full per-file and app-directory inventories and
+   an APEX native-library import/export audit. V013 app trees account for
+   1,298,475,841 bytes; framework trees account for 128,016,954 bytes.
+   Together that is about 1.33 GiB, or 60.69% of the inventoried payload.
+   Corresponding V033 figures are 1,427,613,654 and 128,066,849 bytes.
+
+   Bundled APKs and the Java layer are identified as removal candidates
+   for a native-only image. These are sums of regular-file sizes, not
+   measured compressed-flash or RAM savings. No reduced firmware image or
+   tested file-deletion allowlist exists at this checkpoint.
+
+Earlier physical G13 capabilities
+--------------------------------
+The saved V013/AU13 native installation starts tvinit, native display and
+audio automatically after a normal reboot, without app_process or
+system_server. Stock Android init remains PID 1. The owner confirmed the
+visible launcher and audible tone; 14 audio protocol cases passed. Earlier
+G13 app tests also covered Slides, Doom and YouTube under Android.
+
+The native installation still uses SurfaceFlinger, Android native audio,
+MediaTek services, drivers and configuration. It has not physically removed
+the Java/framework files. Its existing failure-selection path still depends
+on the full Android installation being present.
+
+Saved tests also establish authenticated Ethernet ADB/root at
+192.168.77.3:5555 after a normal reboot. These are recorded capabilities,
+not a fresh check of reachability or current TV state. The newer source
+kernel and Android 16 experiment have not replaced this installation.
+
+What the experiments do not establish
+-------------------------------------
+The source-kernel QEMU model is a partial MT5867 machine with four
+Cortex-A55 cores in AArch32 and captured G13 memory/device-tree information.
+It has six explicit initcall exclusions for unmodeled peripherals. It does
+not validate physical panel/GPU, audio DMA, eMMC, Wi-Fi, OP-TEE or the vendor
+service stack. A separate generic Lean-loader/QEMU boot demonstrates Linux
+handoff, but does not turn the V033 image-preparation test into a kernel boot.
+
+The Android 16 test has no launcher, ART, Java framework, SurfaceFlinger,
+audioserver or vendor HALs. Its first stage enters Android init second_stage;
+it does not exercise a full Android first-stage/AVB/APEX boot. Its single-
+domain allow-all SELinux policy and flattened linker layout are test-only.
+
+The public kernel tree is a porting base. Exact TCL source equivalence,
+compatibility with stock binary modules, Android 16 plus G13 vendor ABI
+compatibility, and physical startup of the new kernel are not established.
+The G06 and G13 have different firmware/partition layouts. ARM64-capable
+CPUs do not imply a verified ARM64 boot path; these builds and tests are ARM32.
+
+Known constraints revealed by the reduction audit
+------------------------------------------------
+The firmware does not divide cleanly into disposable Android directories
+and independent vendor drivers. Recorded dependencies include:
+  * netd -> libnetd_updatable.so in the Tethering APEX, and libnetd_resolv.so
+    in the resolver APEX. The current Ethernet script waits for netd.
+  * audioserver -> libmedia.so -> libandroidicu.so in the i18n APEX.
+  * Native consumers of statsd-exported libraries even when statsd stops.
+  * Vendor scripts selecting behavior from the existence of /system/framework.
+  * Panel/audio initialization using linux_rootfs_a, tvservice and MediaTek
+    middleware shared with other TV functionality.
+
+The V033 OTA also has a mandatory vendor postinstall stage involving the
+shared upgrade partition and boot environment. It is a broader update than
+an isolated replacement of the kernel file.
+
+Reference map
+-------------
+G13_RESEARCH_ARTIFACTS.txt       Tools, result locations and provenance.
+G13_KERNEL_SOURCE.txt           Source search and exact firmware identity.
+g13-kernel/README.txt           Baseline source build and QEMU reproduction.
+g13-android16/README.txt         Updated source build and Android native test.
+g13-kernel-vm/README.txt         5.15.224 VM build, regression and module checks.
+G13_V033_OFFLINE.txt            Signed update, loader and postinstall evidence.
+g13-firmware-trim/README.txt    Inventory, dependency details and methodology.
+G13_NATIVE_BOOT_NOTES.txt       Earlier physical native-startup results.
+G13_DEVELOPMENT.txt             Earlier integration and Ethernet results.

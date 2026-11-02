@@ -1,0 +1,258 @@
+G06 / V8-T221T04-LF1V109 display initialization, OFFLINE investigation
+Worktree /private/tmp/g06-display-offline, branch codex/g06-display-offline
+
+HARDWARE-DRIVEN ABI CORRECTION (2026-11-01T01:33Z)
+The native G06 trial successfully loaded mik with the configuration pack,
+but a direct SYS GET ioctl returned vendor code 8 and the kernel interpreted
+the requested status selector as the attribute number. Inspection then
+found libmi3 ioctl_wrapper at 0x5090c adds a REQUIRED outer envelope to every
+non-null ioctl argument: {u16 _IOC_SIZE(request), zero[6], u64 argument_ptr}.
+Thus SYS needs THREE levels: outer wrapper -> {u64 attr,u64 status_ptr}
+-> 8-byte status. DISP/OSD 12-byte structs also require that outer wrapper.
+The earlier direct-syscall interpretation below was incomplete; the updated
+mi-display-abi.h includes the outer type. check-ioctl-wrapper.py emulates the
+exact V109 wrapper instructions with Unicorn, stops at the ioctl PLT call,
+and checks actual fd/request/16-byte outer wire for all four commands.
+All four passed; evidence: assets/research/g06-display-offline/
+ioctl-wrapper-check.json. This does not establish successful MI calls on TV.
+Native devtmpfs exposes /dev/mik/sys; Android uses /dev/mik!sys.
+
+RESULT
+There is an actionable smaller path than running the stock glibc midaemon:
+provide the exact configuration hierarchy BEFORE module loading, enable the
+existing in-kernel DISP/OSD init branches, then use a native helper to verify
+real initialization and publish readiness before opening fb0. This is an
+OFFLINE-derived candidate, not a demonstrated successful load/display or a
+proof of the runtime-minimal file set. No TV access or reboot occurred.
+
+The owner's concurrent hardware report establishes the immediate failure:
+missing mik_init.ini and sys.ini made MI initialization abort. That report was
+not independently measured by this offline work. The owner also reports that
+Ethernet program replacement and kernel-log return worked on hardware.
+
+INPUTS AND REPRODUCIBILITY
+Started with main/research/firmware-implications.txt; a snapshot is retained
+as starting-notes.txt. Exact pre-existing V109 inputs:
+  /Users/d4hines/repos/dande-tv/main/assets/research/firmware-implications/
+The original extracted.json hashes match all 4 module and 6 config files
+that overlap this investigation; see source-crosscheck.json. Additional
+modules were extracted read-only with debugfs from that directory's exact
+super/vendor.img. Additional configuration came from original V109 backup
+tvconfig.img and tclconfig.img, whose verified hashes are recorded by the
+starting investigation's source-verification.json. No V122/G13 artifacts.
+
+Generated evidence below is relative to this worktree:
+  assets/research/g06-display-offline/  (abbreviated E/ below)
+  E/vendor/lib/modules/                additional exact V109 modules
+  E/tvconfig-config/config/            exact tvconfig configuration tree
+  E/tclconfig-hardware/hardware/       exact tclconfig hardware tree
+  E/module-dependencies.json           per-import providers and residuals
+  E/extracted-manifest.json            extracted file SHA256/size inventory
+  E/complete-selected.txt              full function ranges, relocations,
+                                      resolved constant-string annotations
+  E/mik-full.txt                       complete unannotated module disassembly
+  E/fb-init.txt                        framebuffer open/probe gate
+  E/libmi3-wrapper.txt                 exact ARM Thumb userspace wrappers
+  E/sys-attr-abi.txt                   kernel attribute size/dispatch functions
+  E/kernel-path-references.json        literal paths + referencing addresses
+  E/candidate-manifest.json            candidate files, edges, omissions, edits
+
+Scripts in research/g06-display/ are offline only:
+  python3 research/g06-display/extract.py
+  python3 research/g06-display/dependencies.py
+  python3 research/g06-display/pathrefs.py
+  python3 research/g06-display/prepare.py
+  PYTHONDONTWRITEBYTECODE=1 python3 research/g06-display/verify.py
+  python3 research/g06-display/analyze.py ELF --functions name1,name2
+They use local LLVM and Nix debugfs paths named in the scripts. extract.py
+uses debugfs without -w. analyze.py is a small ELF32 little-endian ARM parser;
+absolute exported __crc_* symbols identify exports in these modversioned
+modules. Residual imports are labelled kernel-or-unprovided, not assumed
+proven kernel exports. Full-function disassembly preserves embedded jump
+tables, which llvm-objdump --disassemble-symbols can truncate.
+
+1. SMALLEST ESTABLISHED MODULE LINK CLOSURE
+All paths below have prefix /vendor/lib/modules/ and suffix .ko.
+A valid topological sequence is:
+  iniparser
+  kdrv_xc
+  utpa2k
+  hdcp1x
+  hdcp2x
+  xcker
+  mwgifker
+  misck
+  mik
+  mstar_fbdev_mi
+This is 9 modules to link mik, 10 including the framebuffer.
+
+Concrete exported-symbol provider counts:
+  mik -> utpa2k 988, xcker 196, misck 90, mwgifker 52, iniparser 16
+  utpa2k -> kdrv_xc 85
+  xcker -> utpa2k 445, hdcp2x 24, hdcp1x 8
+  misck -> utpa2k 164, iniparser 4
+  hdcp1x -> utpa2k 5; hdcp2x -> utpa2k 5
+  mwgifker -> utpa2k 4
+  mstar_fbdev_mi -> mik 42
+Stock modules.dep independently lists the same transitive closure. mik's
+modinfo names logical utpa2k-system/avdec/frontend providers; on this image
+those exports reside in the single utpa2k.ko. Do not search for nonexistent
+split .ko files. Disabling audio/tuner/image decoding in INI cannot remove
+these ELF link-time dependencies in the unmodified monolithic module.
+
+Stock also loads kdrv_platform, kdrv_alg and libdmdbraslia before utpa2k.
+These are NOT hard symbol prerequisites of the ten-module closure. However,
+kdrv_alg registers algorithms and has its own platform/XC dependencies;
+link analysis cannot prove those registrations unnecessary for running XC.
+Retain the stock trio for first validation; remove only with diagnostic
+comparison. kheaders, USB, Mali, dtv_driver and devnode are absent from this
+link closure. Their absence alone does not prove a complete native boot.
+All module/kernel version CRCs must match the stock 4.19.116+ ARMv7 kernel.
+No attempt was made to insert them into the Mac or a QEMU kernel.
+Offline consistency checks matched 2,128 available import/export CRC pairs;
+30 provider-backed imports have no CRC record in their importing modules
+and are listed explicitly in verification.json. Kernel-provided imports
+were not independently matched against a vmlinux export table. Pack checks
+confirmed 331 files and only mik_init.ini differs from its source hash.
+
+2. THE FIRST CONFIGURATION SET AND THE HIDDEN CLOSURE
+At minimum STAGE THESE EXACT TARGET PATHS before insmod mik:
+  /vendor/tvconfig/config/mik_init.ini
+  /vendor/tvconfig/config/sys.ini
+  /vendor/tvconfig/config/board.ini
+  /vendor/tvconfig/config/MMAP_MI.h
+  /vendor/tvconfig/config/OSD/OsdConfig.ini
+  /vendor/tvconfig/config/OSD/OsdDefine.ini
+  /vendor/tvconfig/config/PQ_general/OSDPQConfig.ini
+  /tclconfig/hardware/param/soc/Customer_185_32TCON_B07-1_TL1P2.ini
+This bootstrap list is NOT a sufficient closure by itself.
+
+Evidence: MI_DEV_SYS_Init .text+0x3337c selects the hardcoded vendor MMAP
+path; +0x33390 opens mik_init.ini. Its MI_SYS_Init call at +0x3361c is
+unconditional along the successful SYS path: setting MI_SYS_INIT=0 alone
+is not a bypass. The INI comment's /application/MMAP_MI.h is not the only
+or authoritative mmap source. MI_SYS_Init calls mi_sys_CfgLoadInfo at
++0x2682a8, then mi_sys_MmapParseStart at +0x268594.
+
+mi_sys_CfgLoadInfo references sys.ini at +0x272bc0/+0x272d70. Its customer
+and board accessors call iniparser_load on sys_config:gCustomerConfigINI
+and sys_config:gBoardConfigINI (+0x26f7e4 and +0x26f8a8). The customer file
+selects these further panel/display dependencies:
+  /tclconfig/hardware/param/panel/PanelPara/CSOT32_ST3151B07-1.ini
+  /tclconfig/hardware/param/panel/tcon/CSOT_ST3151B07-1_FHD_TL1P2/
+    tcon_timming.bin
+    tcon_pmu.bin
+    Tcon_OutputGamma.bin
+  /tclconfig/hardware/param/pq/HID_185/
+It also names vendor module, DLC, ColorMatrix, HDR, timing, gamma, EDID and
+other INIs. MI's configuration loader starts customer and three parallel
+load workers even for SYS setup, so zero subsystem init switches do not
+prove that those config reads disappear. m_pPanelName here describes
+1920x1080/LVDS panel settings; FBDEV0's 1280x720 is the OSD canvas. Neither
+number alone establishes the physically attached panel's cold-init timing.
+
+board.ini [ModelConfig_0] selects:
+  /vendor/tvconfig/config/onebin/model_0/MMAP_MI_mt5867_1G_ANR_2K_IOMMU_UMA.h
+[ModelConfig_1] and [ModelConfig_10..15] select:
+  /vendor/tvconfig/config/onebin/model_1/MMAP_MI_mt5867_1.5G_ANR_2K_IOMMU_UMA.h
+MI_DEV_SYS_Init reads MODEL_ID from the flash environment and obtains the
+selected config size/path (+0x33718/+0x33750). Keep these maps; do not select
+one just from MemTotal. Retain MI_FLASH_INIT=1 initially: SYS bootstrapping
+uses MI_FLASH_Open/LoadEnv/GetEnvVar even if tuner/audio are disabled.
+
+MI_OSD_Init opens OSDPQConfig.ini at +0x1cc684 with vendor fallback at
++0x1cc69c. Preserve /config -> vendor/tvconfig/config as a RAM-filesystem
+alias if native startup lacks Android's layout. MI_SYS_Init additionally
+passes Qos.bin and QosCustomer.bin paths to MDrv_QOS_Initialize at +0x26a264;
+these are outside the literal INI-edge graph and need separate inclusion.
+
+Prepared pack: E/candidate-root/, with 331 files (5,786,955 source bytes, including QoS), /config alias, and three documented mik_init.ini edits:
+  MI_DISP_INIT = 1
+  MI_OSD_INIT = 1
+  MI_TUNER_INIT = 0
+FLASH_INIT=1 and SYS_INIT=1 are retained. All other source configuration is
+copied byte-for-byte. No target install, insmod, partition image or flash
+was performed. The pack is a conservative literal-path superset, not the
+smallest proven runtime set. candidate-manifest.json lists unresolved paths.
+Some reference files are absent even in the stock configuration tree;
+others are unrelated output paths, certificates or inactive defaults.
+Do not fabricate them or call this a closed dependency graph.
+
+3. REAL INITIALIZATION CALLS AND ABI
+The smallest candidate uses existing kernel init to avoid glibc/midaemon:
+  init_module -> MI_DEV_SYS_Init -> MI_SYS_Init
+              -> MI_DEV_SYS_ModuleInit -> MI_DISP_Init(&disp)
+                                       -> MI_OSD_Init(&osd)
+After enabling the two INI flags, exact calls are:
+  .text+0x34674 MI_DISP_Init
+    struct: u32 output_timing at +0, u32 tv_system +4, u32 de_flicker +8
+    exact stock INI values: {6,6,0}; this is not framebuffer geometry
+    success -> MI_SYS_SetAttr(5,{u32 selector=6,u8 ready=1,pad[3]}) at +0x34698
+  .text+0x34a80 MI_OSD_Init
+    12-byte struct: u8 wait_sync +0, u8 auto_flip +1, padding +2..3,
+    u32 canvas_mode +4, u16 surface_count +8, u8 wait_idle +10, pad +11
+    exact stock INI values all zero (surface_count 0 means default 64)
+    success -> MI_SYS_SetAttr(5,{selector=9,ready=1}) at +0x34aa4
+Both nonzero return branches abort module initialization. Preserve their
+actual return values/logs rather than treating a created node as success.
+MI_DISP_Init -> _MI_DISP_XC_Init -> MI_DISP_IMPL_XC_Init_EX, etc.
+MI_OSD_Init -> mi_osd_InitHW -> MApi_GFX_Init (+0x1cacec),
+MApi_GOP_InitByGOP (+0x1cb140), MultiAlpha/MIUSel/SetGOPDst.
+
+A static native helper can also issue the same kernel calls directly.
+Reconstructed layouts/constants are in mi-display-abi.h:
+  /dev/mik!disp: ioctl 0xc00c1200, direct 12-byte DISP init argument
+  /dev/mik!osd:  ioctl 0xc00c1400, direct 12-byte OSD init argument
+  /dev/mik!sys:  GET_ATTR 0xc0101805, SET_ATTR 0xc0101806
+SYS outer wire layout is {u64 attr=5,u64 user_address}; user_address points
+to the 8-byte selector/status struct. ARM32 pointers have zero high word.
+Kernel +0x38750 confirms 8 bytes for attr 5; +0x36068..0x3609c and
++0x363c4..0x363ec confirm GET/SET dispatch. Exact libmi3 wrappers independently
+construct the envelope and ioctl constants. These /dev names are vendor
+library literals; inspect native devtmpfs naming/permissions before use.
+The header passed C11 syntax/size checks, not hardware ABI execution tests.
+
+4. THE FRAMEBUFFER GATE THAT AUTO-INIT DOES NOT SATISFY
+mik init_module .init.text+0x6cc records selector 40=true, not selector 1.
+mstar_FB_GetMiDaemonInitStatus .text+0x4c98..0x4cb0 explicitly constructs
+{selector=1,ready=0}, calls MI_SYS_GetAttr(5,&status), then reads byte +4.
+mstar_fb_open +0xb38/+0xb40 rejects false readiness with -EINVAL (+0xb88).
+
+Stock midaemon at executable 0x30cc..0x30e0 publishes selector 1=true only
+after its init work. The replacement must implement the same semantic
+completion: verify DISP/OSD and required output state first, then publish
+MI_SYS_SetAttr(5,{selector=1,ready=1}), and read it back. Do not set it just
+to make open succeed. MI_SYS_SetAttr updates _stModuleInitTable bits at
++0x26c69c onward; it does not perform hardware initialization for the bit.
+Exact libmi3 has additional userspace handling for selector 1; direct ioctl
+only reproduces kernel state needed by fbdev, not all daemon behavior.
+
+After genuine init and readiness: load mstar_fbdev_mi if not already loaded,
+open /dev/fb0 or actual native fb node, FBIOGET_FSCREENINFO/VSCREENINFO,
+mmap using returned smem_len/line_length/bitfields; draw opaque Hello and
+perform required unblank/pan. Driver open owns MI OSD surface/layer setup;
+an additional application-side MI surface need not be assumed. The exact
+FBDEV0 is layer 1, 1280x720, format enum 8, IOMMU=1, DFB_RESERVED=1.
+Continue reading fb bitfields: enum 8 alone is not the public pixel ABI.
+
+5. WHAT REMAINS UNPROVEN / NEXT DISCRIMINATING CHECKS
+No offline analysis can establish successful module init or a lit panel.
+Keep the already-working native diagnostics/recovery path in the hardware
+session; this worktree contains no runner to access it.
+
+Distinguish inherited MBOOT display from independent cold panel init:
+MI_DISPOUT_Init is a separate kernel path (INI stock MI_DISPOUT_INIT=0),
+with MApi_PNL_IOMapBaseInit and MI_DISP_IMPL_XC_InitDisplayOut. Do not claim
+DISP+OSD reprograms panel power/TCON/backlight. If inherited panel state is
+insufficient, trace the DISPOUT Open/PanelSetAttr path and board-specific
+power sequence before changing those controls. Enabling DISPOUT_INIT alone
+is not established as a complete cold-panel sequence.
+
+For the authorized hardware worker, useful returned diagnostics are:
+  each module load result, complete MI init log, selected MODEL_ID/mmap path,
+  missing-file reports, module status selectors 40/6/9/1, fb open errno,
+  fb geometry/bitfields/memory, GOP/layer allocation and physical visibility.
+First check with the conservative config pack and stock runtime module trio.
+Then delete configuration groups or optional module registrations in separate
+bounded comparisons. Only those measurements can justify a smaller runtime
+set or call it sufficient. No readiness spoof or QEMU stub proves display.

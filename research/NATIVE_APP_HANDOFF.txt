@@ -1,0 +1,88 @@
+Hardware app handoff, 2026-11-01
+===============================
+This snapshot is on d4hines/boot. It imports the app source from pid1-demo
+5294dff and adds the working TV adapters. The pid1-demo branch has since
+advanced its Lean supervisor and confinement; do not replace that newer
+launcher with this older launcher during integration.
+
+Live G06 status at handoff
+-------------------------
+Original G06 serial 4C0490290FA05A0C0, stock V109 kernel, native Rust PID 1.
+Root console: ./repl.sh (HTTP 8765, PTY 8766 at 192.168.77.2 over en8).
+PID 1 owns global volume input and publishes the overlay. Android display,
+audio and vendor services are reused; no system_server or Zygote is running.
+No TV reboot is needed to upload and restart individual apps.
+
+Working app features
+--------------------
+Launcher: YouTube, Slides, Doom; separate YouTube app contains Search and
+four suggestions. Back from Search returns to YouTube, next Back exits.
+Fixed duplicate Back consumption: nested screens open separate evdev handles;
+reopen the outer handles on return to discard events consumed by the child.
+User confirmed live search/playback, graphics, Doom controls/effects/music.
+Current native-app Doom music integration is separate from the earlier Doom
+music helper; do not assume every launch path implements identical music.
+
+Main integration points
+-----------------------
+src/platform/src/fb.rs: TV_FB_PATH selects shared RGBA frames, two pages and
+sequence counter. The same binaries retain the normal fbdev path for QEMU.
+src/platform/src/native_audio.rs: TV_AUDIO_ADDR selects TCP PCM bridge;
+quarter-second silent priming avoids AudioTrack startup-threshold deadlock.
+src/ytplay/src/http.rs: TV_HTTP_PROXY tunnels TLS via a host CONNECT proxy.
+src/ytplay/src/hub.rs: application-local Search and suggestions screen.
+hello/FrameStream.java and AudioBridge.java: Android display/audio bridges.
+shared/volume.rs and pid1/src/volume_control.rs: PID1-owned volume and overlay.
+pid1/upgrade-repl.py: verified hot exec of the native supervisor, preserving
+kernel boot ID and existing services; QEMU check includes the handoff path.
+native-app/README.txt: build/run and operational commands.
+
+Validation
+----------
+ARM32 tvinit/ytplay build passed. Existing dead-code warnings remain.
+Live TV captures confirm all 921600 pixels opaque for launcher, YouTube and
+Search. Back regression checked via app liveness after first Back and exit
+after second Back. PID1 hot exec passed QEMU and TV checks with unchanged
+kernel boot ID; volume still belonged to PID1 afterward.
+Python syntax and shell syntax checks passed for runtime scripts.
+Generated captures, binaries and logs are under ignored assets/build/.
+
+Issue 12 integration constraints
+-------------------------------
+This hardware app code still has direct device access, app-local evdev,
+shared /tmp files and broad network access. It does NOT implement the newer
+per-UID confinement, PID1 input sockets or capability broker. Integrate the
+TV adapters behind those interfaces rather than weakening the newer policy.
+The current Java bridge TCP socket/files also need an explicit broker path
+before unprivileged apps can use them under that policy.
+
+Third-party userspace still running includes SurfaceFlinger, allocator and
+composer HALs, audioserver/AudioFlinger and audio HAL, midaemon, tee-supplicant,
+Binder service managers, logd, mediametrics, suspend service and two ART VMs.
+Their presence is verified; necessity of each service is not yet isolated.
+
+Integration on d4hines/pid1-demo
+------------------------------
+Merged with the newer Lean supervisor/launch policy. Apps now retain the
+unprivileged UID, seccomp, namespace and PID1-forwarded-input behavior with
+both fbdev/ALSA and TV bridge backends. Shared frame access is granted by the
+launcher via group 4000; this remains the explicit direct-display exception.
+Settings and volume files remain root-owned. Native hardware supervisor is
+still Rust PID1; the integrated Lean/Rust launcher runs beneath it. This is
+not a full Lean PID1 replacement or completion of the capability broker.
+Owner explicitly prefers mixing Rust (including unsafe) and Lean for now.
+
+Checks passed during integration: Lean policy/ABI suite; ordinary graphical
+QEMU tour; TV bridge protocol QEMU tour; hostile app/Home QEMU test; exact
+stock-kernel hostile launch test. On the real G06, all three app UIDs and
+seccomp were read back, raw input hidden, Search/Back and live video tested.
+Owner confirmed visible video. No flash, kernel restart or vendor-service
+restart was required. The prior app binaries remain in /tmp/pre-integration.
+
+Source layout update
+--------------------
+Runtime sources now live under src/. The above historical paths map to:
+  src/hello/{FrameStream,AudioBridge}.java
+  src/shared/volume.rs and src/pid1/src/volume_control.rs
+  tools/pid1/upgrade-repl.py and tools/native-app/README.txt
+See README.txt and research/SOURCE_LAYOUT_PLAN.txt for the complete map.

@@ -1,0 +1,7 @@
+# Same ordered imports as Android 14 init's default LoadBootScripts().
+import /system/etc/init/hw/init.rc
+import /system/etc/init
+import /system_ext/etc/init
+import /vendor/etc/init
+import /odm/etc/init
+import /product/etc/init

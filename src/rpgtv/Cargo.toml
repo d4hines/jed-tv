@@ -1,0 +1,21 @@
+[package]
+build = "../../tools/rpg/build.rs"
+name = "rpgtv"
+version = "0.1.0"
+edition = "2021"
+description = "TV client for Infinite RPG (github.com/agostbiro/vibecheck-hackathon): runs its Lean game engine locally, driven by the remote"
+
+[dependencies]
+ab_glyph = { version = "0.2", default-features = false, features = ["std"] }
+
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+platform = { path = "../platform" }
+
+[build-dependencies]
+cc = "1"
+
+[[test]]
+name = "offline"
+path = "../../test/rpg/offline.rs"

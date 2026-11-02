@@ -1,0 +1,14 @@
+{"version": "1.3.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"type": "path",
+   "scope": "",
+   "name": "doom",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../src/doomtv/lean",
+   "copy": false,
+   "configFile": "lakefile.lean"}],
+ "name": "«doom-test»",
+ "lakeDir": ".lake",
+ "fixedToolchain": false}

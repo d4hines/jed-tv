@@ -1,0 +1,72 @@
+Issue 11: new physical evidence, 2026-11-01
+https://github.com/d4hines/dande-tv/issues/11
+
+No TV access was used for this review. The owner had just unplugged it.
+Machine-readable observations and ten source hashes:
+  research/g06-hardware-contract.json
+
+What can be narrowed now
+------------------------
+1. Watchdog is no longer wholly untested on physical hardware. Two native
+   PID-1/root-PTY sessions survived 90-second observations while servicing
+   the exact stock watchdog through /proc/utopia. We also kept the shell
+   across longer graphics investigations. The HAL clear operation is one
+   byte, value 1, at physical 0x1f006000. INIT obtains the register mapping;
+   HAL_WDT_Start itself does not change registers. CONFIG_DEVMEM is off.
+   Expiration duration and standby/reset behavior remain unmeasured. QEMU
+   can model the clear operation now, but must not assume a timeout value.
+
+2. Native Ethernet/root-shell iteration is demonstrated. The static
+   192.168.77.2 host accepts the Mac at .1 on HTTP 8765 and PTY 8766. Upload,
+   child execution, two concurrent shells, cwd/environment persistence and
+   Ctrl-C were measured without Android userspace. DNS/TLS, packet loss,
+   throughput and link-reconnect coverage are still open. This is a more
+   specific network milestone than generic driver initialization.
+
+3. The actual framebuffer contract is substantially less uncertain:
+   boot fb0: 1920x1080, 32 bpp, stride 7680, one page;
+   MI fb1: 1280x720, 32 bpp, stride 5120, two pages, 7372800 bytes.
+   Do not substitute fb0 for the MI device merely because it exists.
+   The MI allocation uses 64-bit IOVAs beginning at 0x200000000, which are
+   truncated by legacy smem_start. The first allocation appears as zero
+   there and legacy mmap returns ENOMEM. Exporting the allocation through
+   MMA and mapping its fd uncached succeeded. Import returns a positive
+   fd as success, not only zero. These are concrete regression cases for
+   an emulator-side API shim; no actual GOP/IOMMU model exists yet.
+
+4. Vendor dependencies are now measured failure points, not hypothetical:
+   missing tee-supplicant blocked midaemon in optee_supp_thrd_req;
+   missing Binder devices aborted it;
+   its service manager must use /dev/vndbinder explicitly;
+   stock managers need selinuxfs/status and known policy classes;
+   missing Android hardware properties selected the fallback composer,
+   which failed a required HWC2 function. ro.hardware=mt5867 is a candidate
+   to verify, not a newly measured property value. A QEMU stub which merely
+   returns successful MI initialization would hide all these distinctions.
+
+5. Entropy delay is real on a minimal physical boot: one captured kernel
+   reported crng init done at uptime 120.412019 seconds. This is one
+   observation, not a fixed boot deadline, and was not a direct getrandom
+   readiness test. Keep an early-not-ready test; do not fix QEMU by making
+   entropy immediately ready and then call that hardware parity.
+
+What remains unproven
+---------------------
+The owner never saw native Hello. Allocation, drawing and page presentation
+returned success, but physical output did not. The software's historical
+hello-visible phase name is not visibility evidence. The stock OSD enable
+query returned zero; inspection suggests it can report the last scanned
+window rather than aggregate layer state, so that alone is not a proven
+root cause. Audio, physical IR, decoder throughput, DMA coherence, cold
+panel output and poweroff are still open. The early Android startup trace
+was prepared but never installed; the owner put it on hold.
+
+Suggested issue-11 wording change
+--------------------------------
+Replace broad "physical watchdog untested" with "stock watchdog servicing
+verified; expiration/standby behavior unmeasured". Split networking into the
+proved native Ethernet control channel and unproved playback/reconnect
+performance. Split display into the now-observed MI/fbdev/MMA API contract
+and the still-unproved panel/scanout path. Keep devices_ready=false for the
+current QEMU machine. The new evidence narrows requirements; it does not
+turn the partial RIU machine into a working display emulator.

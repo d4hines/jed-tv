@@ -1,0 +1,208 @@
+IMPLEMENTED REORGANIZATION (2026-11-01)
+======================================
+This inventory below records the planning basis; the moves are now implemented.
+All runtime sources are under src/. Host groups are under tools/. Root ./flash.sh,
+./repl.sh, ./hello.sh and ./shell.sh remain entry points. No TV action or build
+was performed by the migration agent. New src/audio/bridge.rs remains untested
+work-in-progress, not a completed/deployed audio feature.
+
+Actual mappings:
+  pid1 runtime crate -> src/pid1; host files/pin -> tools/pid1
+  launcher runtime crate -> src/launcher; host files/pin -> tools/launcher
+  hello Java -> src/hello; readme -> tools/hello
+  audio C/asm -> src/audio; existing host commands -> tools/audio
+  native-app host commands -> tools/native-app
+  lean package -> src/lean; shared code -> src/shared
+  legacy Doom workspace/engine sources -> src/legacy-doom
+  legacy Doom host commands/pin -> tools/legacy-doom
+  root host commands -> tools/root
+  target shell/config payloads -> src/runtime-scripts/<domain>
+  historical Java/Rust/assembly probes -> src/probes
+  guest test programs -> src/test-fixtures
+  runtime experiments -> src/experiments; Python host drivers -> tools/experiments
+  decoder translation input -> src/ffh264/ytdec.c
+
+Live scripts, Cargo paths, Nix imports, compiler inputs and current README links
+were updated. Historical captured assets and dated research narratives remain
+unchanged. Existing generated output directories under assets/ are preserved.
+Independent nested Cargo workspaces retain their locks and profiles. All seven
+workspace metadata checks passed in the independent read-only audit; Python and
+shell syntax checks plus root wrapper help were checked by the coordinating agent.
+Exact per-file map: assets/research/rust-audio-api/reorg-map.json (generated).
+
+Planning inventory follows
+==========================
+
+Runtime source layout audit, 2026-11-01
+=====================================
+Owner instruction: authored code that runs on the TV belongs under src/.
+Host orchestration/tests belong under tools/, test/ or their existing host
+entry-point directories; generated binaries and evidence remain under assets/.
+This file is an inventory and path-migration plan, not a claim of deployment.
+
+Already in the right place
+--------------------------
+src/tvinit, src/ytplay, src/doomtv, src/slides, src/platform, src/mp4,
+src/ffh264 and src/third_party. New audio work now uses src/audio/ and
+host build/check tools under tools/audio/. audio/check-bridge.py has been
+moved to tools/audio/check-bridge.py; its repo root is now parents[2].
+
+Minimal source moves
+--------------------
+1. pid1/Cargo.toml, Cargo.lock, rust-toolchain.toml, .cargo/ and src/
+   -> src/pid1/ (preserving its crate src/ subdirectory).
+   Includes native PID1, REPL, MI setup, volume_control and helper binaries:
+   tv-binder.rs, tv-bootlogo.rs, tv-mi-ioctl.rs.
+   Keep host build/packaging/repl/watch scripts as existing entry points or
+   thin wrappers; update only their source/cwd/manifest references.
+
+2. launcher/Cargo.toml, Cargo.lock, rust-toolchain.toml, .cargo/ and src/
+   -> src/launcher/. Includes boot-time request handling and launcher-probe.
+   Keep launcher/package.nix, runtime.json and host commands accessible.
+
+3. hello/*.java -> src/hello/.
+   All six are target Java source, including historical test tools:
+   HelloScreen, FrameStream, AudioBridge, AudioPcm, AudioTone, FactoryBootProbe.
+   flake.nix is the primary javac/D8 source-path consumer.
+
+4. lean/ -> src/lean/ (whole package is simplest).
+   TV/Menu, Supervisor, Apps, Sandbox, Proofs, TV.lean and native/linux.c are
+   runtime/control source. The package also contains host check scripts,
+   drivers and Lake metadata; keeping these together avoids gratuitous split.
+   Do not move generated .lake/ cache into Git.
+
+5. shared/volume.rs -> src/shared/volume.rs.
+   Used by native PID1 and src/tvosd. Relative #[path] attributes need review.
+
+6. doom/Cargo.toml, Cargo.lock, .cargo/, rust-toolchain.toml, crates/ and
+   authored engine/{doomtv_shim.c,doomtv_sound.c,silent_sound.c,include/}
+   -> src/legacy-doom/.
+   This is the old hardware experiment, distinct from modern src/doomtv.
+   Keep it reproducible until explicitly retired; do not replace the PID1
+   dependency on its platform crate during a source-only move.
+
+7. audio/{bionic-start.S,middleware-probe.c,standalone-app-state.c}
+   -> src/audio/. New Rust bridge sources already go there.
+   audio/build-native.sh and tools/audio build scripts read the new locations.
+
+8. Authored shell/config payloads executed on the TV -> src/runtime-scripts/:
+   pid1/{mount-stock-runtime.sh,start-vendor-display.sh,
+         prepare-java-runtime.sh,hello-native.sh}
+   audio/start-native.sh
+   native-app/start.sh
+   doom/run-native.sh
+   root/{adb-root.sh,adb-root.rc,execute-kexec.sh,check-cpu-hotplug.sh}
+   research/graphics-early-trace.sh
+   Preserve basenames delivered to /tmp: most remote commands refer to those
+   names, so host source movement need not change the deployed protocol.
+   Host build.sh/check-*.sh and the audio Android linker wrapper are host code.
+
+Diagnostic target sources also outside src
+-----------------------------------------
+root/reset-probe.S is a bare-metal RAM payload, not Linux userspace, but is
+still authored target code: src/probes/reset-probe.S.
+research/graphics-trace-probe.S -> src/probes/graphics-trace-probe.S.
+research/tv-probe/{Cargo.toml,Cargo.lock,src/} -> src/probes/tv-probe/.
+research/{FactoryAuthorizedIdentityProbe.java,FactoryIdentityProbe.java,
+           FactoryReadOnly.java,FactoryReadback.java}
+research/new-tv-20261031T183329Z/G13FactoryReadProbe.java
+research/g13-readback/{ReadbackActivity.java,ServerActivity.java}
+   -> named subdirectories under src/probes/ (preserve Java package names).
+These are historical probes, not currently running services, but leaving
+source in research would violate a literal all-target-source rule.
+
+QEMU-only guest source (optional same-pass cleanup)
+--------------------------------------------------
+test/{confinement-init.rs,g06-init.rs,tvinit-child.rs}
+tools/qemu/g06-init.rs
+research/qemu-g06/init-smoke.c
+   -> src/test-fixtures/ or src/probes/qemu/. These compile into guest
+   programs; unlike QEMU's host model research/qemu-g06/g06.c, they are not
+   host tools. Adjust the compilation paths in demo/package.nix, test/run.py,
+   tools/qemu/g06.py and research/qemu-g06/run.py.
+experiment/{baremetal,nolibc} contains both target and host experimental code.
+Move target crates under src/experiments/ if enforcing the rule globally;
+keep benchmark/analysis scripts and experimental documentation outside src.
+The no-libc and bare-metal workstreams should not be silently deleted.
+
+tools/ffh264/ytdec.c is an intermediate source translation input for the
+runtime decoder; it belongs with src/ffh264 or an explicitly documented
+source-generation input directory. Python generation scripts remain tools/.
+
+Build and reference changes required
+------------------------------------
+flake.nix:
+  source paths for hello Java and root adb-root.{rc,sh}; import nix/lean-check.nix.
+  Preserve public nix attribute names and firmware/runtime pin locations.
+tools/tvinit/build.rs:
+  package directory ../../lean -> ../lean after the Lean move; native/linux.c
+  stays relative to that package. Error text should name the current path.
+demo/package.nix:
+  clean-source filter already includes src; drop obsolete root lean inclusion.
+  checkedLean, embedded host fixture source paths, and package copies must
+  point to the migrated Lean/target source locations.
+lean/check*.py and check.nix (if moved):
+  recompute repository root depth; use package-root for TV sources and native
+  drivers; host outputs continue under repo/assets/build/lean.
+  check.nix currently copies a source package into work/lean, which changes
+  relative __file__ depth: use explicit TV_REPO_ROOT/TV_LEAN_ROOT overrides or
+  preserve the work/src/lean layout rather than guessing a single depth.
+pid1/{build.sh,build-repl.py,build-mi.py,package.py}:
+  update cargo cwd/manifest and source hashing. Include src/shared/volume.rs;
+  keep assets/build/pid1-repl, assets/build/hello-pid1 and manifests unchanged.
+  pid1 .cargo target-dir must still resolve to root assets/, not src/assets/.
+  Source-only relocation changes hash inputs only if paths are hashed; report
+  build identity changes rather than silently replacing installed images.
+pid1/Cargo.toml:
+  dependency ../doom/crates/platform -> ../legacy-doom/crates/platform.
+  Native PID1 should remain an independent workspace with its own lockfile.
+launcher/build.sh:
+  cargo cwd/manifest src/launcher; keep package runtime paths and commands.
+launcher/package.nix:
+  relative host-tool imports need repo-root paths if this Nix file moves.
+doom/{build.sh,engine/build.sh,prepare-runtime.py}:
+  source paths src/legacy-doom; assets output directories unchanged.
+  legacy doomtv/build.rs has a ../../../assets fallback: new depth requires
+  ../../../../assets, preferably replace with explicit DOOMGENERIC_DIR.
+  Runtime source-hash enumeration must use new roots.
+pid1/src/main.rs:
+  #[path="../../shared/volume.rs"] stays correct when both are under src.
+src/tvosd/src/main.rs:
+  #[path="../../../shared/volume.rs"] becomes ../../shared/volume.rs.
+audio/build-native.sh:
+  compiler inputs are src/audio; bionic runtime copies remain in assets/.
+audio/start-native.py, native-app/run.py, doom/run-native.py, pid1/graphics.py:
+  update only local source paths uploaded; preserve /tmp script names.
+root/{check-image.py,kexec.py,build-reset-probe.py}:
+  source payload reads point to src/runtime-scripts or src/probes.
+research/graphics-early-trace.py, research/g13-readback/build-helper.sh:
+  update source reads/compiler arguments; host artifacts still assets/.
+
+Cargo and tools strategy
+------------------------
+Keep src/Cargo.toml as the app workspace. Add explicit excludes for moved
+independent workspaces (pid1, launcher, legacy-doom, probes, experiments), or
+add [workspace] to independent package roots. Do not absorb their lockfiles
+and profiles into the app workspace accidentally. Use explicit cargo
+--manifest-path and --target-dir in host tools so relocating .cargo config
+cannot scatter outputs into src/assets. Keep compiler target specifications
+next to the package that uses them.
+
+A minimal migration need not invent a new top-level directory: use existing
+src/, tools/, test/, research/, assets/. Thin root scripts (repl.sh, flash.sh,
+hello.sh, shell.sh) may remain user entry points because they run on the host.
+Do not turn old source paths into duplicate copies. Host compatibility wrappers
+can refer to one canonical source location until callers are updated.
+
+Verification after migration
+----------------------------
+1. Inventory all executable payload compiler/upload paths; reject dangling
+   old source references outside historical notes.
+2. cargo metadata for every moved workspace with --locked.
+3. Build native PID1, boot launcher, app workspace and Java jar without TV access.
+4. Run Lean checks, Nix app build, ABI/ownership QEMU test, full app tour and
+   existing boot/recovery packaging checks appropriate to changed paths.
+5. Compare semantic artifacts or document changed build identities. Do not
+   flash or restart the TV merely for directory relocation.
+6. Search authored target extensions outside src; classify every remaining
+   hit as a host tool, historical text/example, or a deliberately deferred move.

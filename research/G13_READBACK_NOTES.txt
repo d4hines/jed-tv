@@ -1,0 +1,177 @@
+TCL G13 / T221T10 V013: stock firmware readback through the factory HAL
+2026-10-31
+
+Generated probes, logs, disassemblies and build products are stored in
+assets/research/g13-readback/ from the workspace root. Sources stay in
+research/g13-readback/. Archived manifests retain their original paths.
+
+CONFIRMED MECHANISM
+
+An ordinary locally signed APK targeting API 32 can call the installed
+MediaTek factory HIDL service. This G13 firmware explicitly allows the
+untrusted_app_32 SELinux domain to find hal_tv_tvfactory_hwservice and call
+hal_tv_tvfactory_default. ADB shell has no such permission. This explains why
+the earlier shell/app_process probe failed even though an installed app works.
+
+Relevant live vendor policy (preserved in assets/research/new-tv-20261031T183329Z/readback-probes):
+  (allow untrusted_app_32_34_0 hal_tv_tvfactory_default (binder (call transfer)))
+  (allow untrusted_app_32_34_0 hal_tv_tvfactory_hwservice (hwservice_manager (find)))
+The live platform seapp_contexts assigns targetSdk32/33 regular apps to this
+domain; targetSdk34 uses a different domain. The installed tcl.adapter shared
+library supplies the generated factory interface classes.
+
+Tested device:
+  owner-reported retail label: 31Q3K (not independently confirmed)
+  G13_2K_US / MT9221-Lite / mt5867 / t56
+  V8-T221T10-LF1V013, AU13, bootloader 01.01.250814
+  TCL/G13_2K_US/G13:14/UKN2.241110.001/AU13:user/release-keys
+  Android14, ARM32, Linux5.15.167-android14-11
+  authorized USB ADB serial 18ACC22D1C47
+  post-unlock Android state: unlocked/orange, boot_completed=1, Enforcing
+
+The APK uses:
+  vendor.mediatek.tv.mtktvfactory.V1_0.IMtkTvFApiSystem
+  getService("default", false)
+  a_hidl_a_mtktvfapi_sys_read_file_byte(path, length, long_offset, callback)
+This generated proxy sends HIDL transaction21 and returns a byte vector and
+status. Status0 and exact requested byte counts are required for raw reads.
+
+The actual installed native implementation preserves the 64-bit offset
+through MI_FS_Fseek -> MsFS_Fseek -> fseeko64, including on this ARM32 build.
+It checks seek success before reading. This matters because super crosses
+the 2 GiB boundary. See g13-readback/offset-width-analysis.txt and the saved
+disassemblies/libraries for the verified call chain.
+
+A fixed probe read /proc/self/status through the HAL and observed uid/gid0
+in the service process, domain u:r:hal_tv_tvfactory_default:s0. The app itself
+ran as uid10108 in untrusted_app_32. The helper did not execute root shell
+commands, change SELinux policy, or modify firmware partitions. adb root still
+reports production-build refusal, and direct shell block reads are denied.
+
+The service can read mmcblk0, both hardware boot areas and live sysfs geometry.
+The first full MBOOT capture matched an independent second source read:
+  SHA256 643058879b84d044dea58a4572bd9ade1cc3140f3d3357eeaabae53be32ec382
+  offset 2097152, length 5242880
+Evidence: assets/research/g13-readback/probe-result.txt, mboot-proof.json, mboot-proof.img.
+The later normal/non-debuggable helper returned the same source hashes;
+see release-read-verification.json. Disabling helper debuggability improved
+transfer speed without changing the device's security configuration.
+
+TOOLS AND GUARDS
+
+g13-readback/ReadbackActivity.java: initial fixed diagnostic probe.
+g13-readback/ServerActivity.java: bounded read-only bridge; no write/exec API.
+g13-readback/package-apk.py: minimal binary manifest, targetSdk32, tcl.adapter.
+g13-readback/build-helper.sh: builds and locally signs the bridge APK.
+g13-readback/client.py: authenticated ADB-forwarded socket transport.
+g13-readback/dump-stock.py: geometry checks, capture, verification and manifest.
+g13-readback/verify-backup.py: independent host/chunk/coverage verification.
+
+The helper has no Internet permission. Its random abstract Unix socket and
+per-launch UUID token are announced to authorized ADB in the TVReadback log
+tag. adb forward binds a temporary host port; the client removes that mapping
+when it closes. The helper is kept foreground with the screen awake. It does
+not start on boot, install su, or alter boot/recovery images. Its only ordinary
+file writes are small files inside its own Android app data directory.
+
+The host and app both require the exact V013/AU13 fingerprint. The app accepts
+only bounded sysfs text reads and aligned raw reads from mmcblk0/boot0/boot1.
+Raw eMMC reads stop before userdata's live start; RPMB is not accepted. It
+never accepts a block-device output path or shell command. Requests are at
+most64MiB, HAL reads are256KiB, and the host currently captures32MiB chunks.
+Only one dumper may run; a host flock enforces this for the supplied script.
+
+The host builds its map from current /dev/block/by-name links and the HAL's
+reads of /sys/class/block/{node}/{start,size}. It checks all51 physical
+partitions, excludes userdata, checks bounds/overlaps, then captures the other
+50 named partitions, both4MiB hardware boot areas, and the first2MiB of eMMC.
+Expected current plan:53 images,3359MiB. These sizes are observed values, not
+constants to reuse on another model. No eMMC tail inside userdata is captured.
+
+REPRODUCTION
+
+From /home/eduardo/tv_hack:
+
+  bash research/g13-readback/build-helper.sh
+  adb -s 18ACC22D1C47 install -r --no-streaming assets/research/g13-readback/build/readback.apk
+  adb -s 18ACC22D1C47 shell am start -n local.tvreadback/.ServerActivity
+
+Wait for the TVReadback startup log/ready screen, then:
+
+  nix shell nixpkgs#python3 -c python3 research/g13-readback/dump-stock.py \
+    --target 18ACC22D1C47 --output assets/backups/g13-v013-stock-new
+
+Use a new output directory. --resume can resume an interrupted capture only
+when its identity, geometry and plan match. Previously completed images are
+rehashed on the laptop; an incomplete image restarts, preserving its partial
+under an .interrupted timestamp. Never run the old G06 dumper on this TV.
+
+The JDK path in build-helper.sh is the tested Nix store path; if garbage
+collected, supply a JDK supporting javac --release8. The saved R8/D8 JAR is
+8.3.37. The small Android4.1 compile-stub JAR is only a host build dependency:
+the APK itself targets32 and runs against the TV's actual Android14 APIs.
+Its SHA256 is checked by the build script. A binary XML manifest avoids the
+x86-only aapt package on this ARM64 NixOS host. Android installation and
+apksigner both accepted that manifest. The signing key is a new local helper
+key, unrelated to TCL's platform signing key.
+
+VERIFICATION AND LIMITS
+
+For every captured chunk:
+  1. HAL reads fresh bytes; the helper hashes exactly the streamed bytes.
+  2. The laptop verifies length and SHA256 during transfer.
+  3. A separate HASH request rereads the same source range through the HAL.
+  4. The host compares that second source SHA256 to the transferred bytes.
+At image completion, the file is fsynced, renamed from .partial, protected
+mode0400, and independently reread on the host for a full-image SHA256.
+The backup directory is mode0700 because calibration/certificate partitions
+contain device-specific data. All paths and chunk results are in manifest.json.
+
+Completed capture: ../assets/backups/g13-v013-stock-20261031.
+Started 2026-10-31T18:54:04Z; finished 2026-10-31T19:10:54Z.
+All 53 images, 3522166784 bytes (3359 MiB), passed: every one of the 146
+chunks matched its second source read. An additional host verification then
+read every image and checked chunk/full-image hashes, exact coverage, sizes,
+mode0400 and SHA256SUMS. See host-verification.json. No source changes or
+hash mismatches were observed. The initial debug-helper run was deliberately
+interrupted for the non-debuggable helper; verified completed images were
+preserved and rechecked on resume. The only abandoned partial was zero bytes
+and is retained in assets/research/g13-readback/interrupted, outside the complete backup.
+image-header-checks.json records boot/header sanity checks; all three MBOOT
+images identify bootloader 01.01.250814. These are not signature-validation
+results. readback-tool-provenance.json records source/helper APK hashes.
+
+For any later capture, consult manifest.json; planned size alone is not proof.
+Require complete=true and inspect every image's status. "verified" means all
+chunk/source comparisons and fresh host hashing passed. "source_changed"
+means live data changed between reads and must not be represented as a stable
+snapshot. Matching individual chunks still do not establish cross-partition
+atomic consistency. Restoration has not been tested.
+
+After capture completes, independently recheck every saved byte, chunk,
+source-comparison record and checksum manifest:
+  nix shell nixpkgs#python3 -c python3 research/g13-readback/verify-backup.py \
+    assets/backups/g13-v013-stock-20261031
+This writes host-verification.json only after every image passes. It uses
+the capture's two source reads and a new host read, not a third TV read.
+
+This is a post-unlock/post-reset backup, not a pristine factory-shipped clone.
+The readback route has only been tested in that state. Locked-device behavior
+is untested; these results do not establish unlocking as a prerequisite.
+Userdata, RPMB, fuses and any bytes inside userdata's range are excluded. Both
+A/B slots are captured; no OTA or replacement kernel was installed. The V033
+download is a separate newer update and must not be confused with these V013
+device reads. The old V109 backups also remain separate and intact.
+
+Cleanup after a backup and host verification complete:
+  adb -s 18ACC22D1C47 uninstall local.tvreadback
+This removes the temporary helper and its app files. The client normally
+removes only its own ADB forwarding entry automatically. Preserve the host
+backup, scripts, APK, logs, geometry and hashes for future work.
+
+This capture's cleanup is complete: helper uninstall returned Success and
+the package is absent; no ADB forwards remain. Final read-only Android checks
+confirmed V013/AU13, unlocked/orange, boot_completed=1, slot a, bootloader
+01.01.250814, ro.debuggable=0, SELinux Enforcing and ADB uid2000. See
+helper-cleanup.json and post-backup-getprop.txt in the backup directory.
+No reboot or firmware/bootloader partition write was performed for this dump.

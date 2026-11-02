@@ -1,0 +1,131 @@
+Decoder shrinking handoff, 2026-10-31
+===================================
+
+Worktree: /Users/d4hines/repos/dande-tv/agent1, branch d4hines/agent1.
+Nothing committed. No TV/device action, firmware write or live YouTube request.
+This work owns only tools/ffh264 and src/ffh264 plus this note. Root's QEMU,
+firmware-kit and platform changes remain present and were not reverted.
+
+Implemented
+-----------
+- tools/ffh264/shrink.py specializes postprocessed c2rust H.264 to 8-bit
+  YUV 4:2:0. SPS parsing rejects chroma_format_idc != 1 and luma/chroma
+  depths != 8 before DSP setup. Existing FFmpeg error paths handle rejection.
+- Kept 8-bit branches of bit-depth DSP/prediction/interpolation dispatch;
+  removed unreferenced high-depth templates and their extern declarations.
+  The conservative identifier graph keeps a candidate if any retained code
+  references it. 939 high-depth function definitions removed per architecture.
+- All existing FFmpeg NEON/ARMv6 assembly is unchanged.
+- tools/ffh264/postprocess.py automatically invokes shrink.py; regeneration
+  cannot silently restore the full-depth decoder.
+- postprocess.py now generates a complete staged tree under assets/build/
+  ffh264/postprocess-TARGET-* before publishing successful .rs files with
+  atomic per-file replacement. It preserves unrelated files and retains
+  staging evidence. A transformation failure no longer deletes active source.
+- tools/ffh264/check-formats.py generates local 64-frame AVC clips and tests
+  both QEMU architectures: 8-bit 4:2:0 accepts; 10-bit and 4:4:4 reject cleanly.
+  It records fixture/binary hashes and logs under assets/build/ffh264/format-checks.
+
+Measured reduction
+------------------
+Counts include all generated architecture .rs files (physical lines, not cloc):
+  ARM32: 356,407 -> 288,970 lines; -67,437 (-18.9%).
+  ARM64: 358,154 -> 290,647 lines; -67,507 (-18.8%).
+  Combined: -134,944 generated source lines. Both ABI-specific trees remain.
+
+Release ytplay executable bytes:
+  ARM32: 3,574,884 -> 3,150,508; -424,376 (-11.9%).
+  ARM64: 3,677,792 -> 3,166,552; -511,240 (-13.9%).
+llvm-size text/data/bss (text includes read-only data):
+  ARM32 before: 3452934 / 120252 / 1393392
+        after:  3031038 / 117792 / 1391780
+  ARM64 before: 3502451 / 173200 / 1401297
+        after:  2996131 / 168280 / 1404633
+Baseline binaries and an archival source snapshot are under
+assets/build/ffh264/shrink-baseline/. The archival snapshot was NOT overlaid
+onto source; see the regeneration incident below.
+
+Validation
+----------
+- Both release ytplay builds passed.
+- Final ARM32 cargo check -p ffh264 passed after staged regeneration. Its
+  initial sandbox attempt could not write Zig cache; the same check passed
+  with cache access.
+- Fast/ARM64: all 4,431 Coffee Run frames match reference FFmpeg hashes.
+- Faithful/ARM32: all 4,431 frames match, not merely the default 240-frame
+  gate. Root's g06-compat trampoline was active: newer syscalls return
+  ENOSYS, exercising musl legacy clock/futex fallbacks.
+- All six format tests passed (supported420/10bit/444 x both architectures).
+  Successful evidence:
+  assets/build/ffh264/format-checks/1793496018090072000/results.json
+- Re-running specialization is idempotent (reports already specialized).
+- Both architecture trees were regenerated from raw c2rust + C layouts.
+  Every resulting .rs file matched the saved specialized snapshot byte for
+  byte: zero differences, including all 232 compile-time layout assertions.
+- git diff --check passed for tools/ffh264 and src/ffh264.
+Evidence:
+  assets/build/ffh264/shrink-framemd5-gates.log
+  assets/build/ffh264/shrink-faithful-full-result.txt
+  assets/build/ffh264/shrink-faithful-full.log
+  assets/build/ffh264/shrink-regenerate-{arm,aarch64}.log
+  assets/build/ffh264/shrink-{TARGET}.json
+  assets/build/ffh264/shrink-{arm,aarch64}-build.log
+
+Reproduction
+------------
+Run Cargo from src/ to select the existing Rust 1.92 toolchain/config.
+  cd src
+  cargo build --release --target armv7-unknown-linux-musleabihf -p ytplay
+  cargo build --release --target aarch64-unknown-linux-musl -p ytplay
+  cd ..
+  python3 tools/ffh264/check-formats.py
+  python3 test/check.py -k framemd5
+For full ARM32 coverage, run test/run.py faithful --headless --no-build
+--mode framemd5 --timeout 300 with the offline replay server, then run
+check_framemd5.py on serial.log and assert the log contains exactly 4431
+framemd5 records. The existing comparator accepts a matching prefix, so
+checking the complete frame count matters.
+
+With current cached raw/preprocessed C inputs:
+  python3 tools/ffh264/postprocess.py armv7-unknown-linux-musleabihf
+  python3 tools/ffh264/postprocess.py aarch64-unknown-linux-musl
+For fresh C/transpilation inputs:
+  tools/ffh264/regenerate.sh
+The latter uses eduardo-vm for c2rust; neither command is a TV action.
+
+Regeneration incident and resolution
+-----------------------------------
+The first regeneration test found ignored pre-migration tus/raw paths still
+pointing to app/decoder/ytdec.c. The old postprocess deleted its output tree
+before noticing that invalid source path, leaving incomplete generated trees.
+An archive overlay restore was rejected by automatic review because it could
+replace uncommitted edits; that command was not executed or bypassed.
+Instead, only the ignored cache manifests and cached ytdec files were migrated
+to the current tools/ffh264/ytdec.c path. The staging/publish fix above was
+implemented, then both trees regenerated successfully from those inputs.
+The restored output exactly matches the pre-incident specialized snapshot.
+Both source trees are complete again. Root was notified Cargo is safe.
+No unresolved source-tree damage remains.
+
+Remaining limits and next opportunities
+---------------------------------------
+This is a large mechanical reduction, not a small decoder ready for a full
+Lean translation. It still includes FFmpeg allocation, threading, SPS/PPS,
+CABAC/CAVLC, picture management, generic codec infrastructure, and duplicate
+architecture-specific types. We kept C ABI/layout checks and unsafe code.
+A sensible Lean boundary starts at bitstream parsing and pure leaf transforms,
+then picture management; the existing small mp4/platform components remain
+better initial proof targets than the entire generated decoder.
+Further candidate shrinking: specialize 8-bit chroma dispatch to 4:2:0,
+prune now-unreachable 4:2:2/4:4:4 branches, then remove unreachable generic
+functions/types using stronger per-module reachability. Preserve rejection
+before unsupported-format dispatch and broaden fixtures before larger cuts.
+The assembly source includes variants the linker may now discard; it was
+intentionally retained unchanged, as requested.
+
+A separate pre-existing benchmark bug was exposed by a 4-frame positive clip:
+player.rs conversion-only bench never flushes its final decoder and indexes
+frames[0] when frame threading buffered every frame. Both actual decode-only
+passes returned the correct 4 frames before that panic. The 64-frame format
+fixture avoids this unrelated bug; root was informed. No ytplay source was
+changed by this task.

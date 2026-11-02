@@ -1,0 +1,234 @@
+G13 kernel sources and newer firmware candidates
+2026-11-01
+
+RESULT
+
+No exact public source release for this unit's installed TCL V013 kernel
+was found. There is a credible Android 14 / Linux 5.15 MT5867 porting base:
+techyminati/android_kernel_oneplus_mt5867, branch android-14.0. It is much
+more complete for this hardware than TCL's published mt9221U repository.
+It has now been compiled with the saved G13 configuration and booted to
+BusyBox PID 1 on the partial MT5867 QEMU machine. Four CPUs, timers, child
+execution, tmpfs and sync debugfs passed. See research/g13-kernel/README.txt
+for the required build repairs, exact evidence and hardware limitations.
+No physical G13 boot with this kernel has been attempted.
+
+Subsequent QEMU work merges pinned Android-common updates to Linux 5.15.220
+and boots a small ARM32 Android 16 native userspace. Android init, property
+events, concurrent Binder calls and shared-memory descriptor transfer pass.
+See research/g13-android16/README.txt for source pins, reproducible commands
+and the remaining vendor/HAL limitations. This does not establish physical
+TV or proprietary module compatibility and does not replace the V033 finding.
+
+A newer exact-platform binary package is available: official TCL T221T10
+V033, containing Linux 5.15.180-android14-11 and Android 14 userspace AU21.
+This is the best identified candidate for trying a newer vendor kernel.
+It is a firmware update, not a source release. No installation, reboot,
+partition write, UART access, or change to the native launcher was made.
+
+All newly downloaded/generated evidence is under:
+  assets/research/g13-kernel-source-20261101/
+The subsequent source build and QEMU trials are under:
+  assets/build/g13-kernel/
+The stock firmware and earlier captures remain in:
+  /home/eduardo/tv_hack/assets/
+That absolute path is intentional: the current dande-tv checkout did not
+contain the earlier ignored assets at the time of this investigation.
+
+LIVE IDENTITY
+
+Read-only Ethernet ADB at 192.168.77.3:5555 confirmed:
+  TCL/G13_2K_US/G13:14/UKN2.241110.001/AU13:user/release-keys
+  board G13, platform/hardware mt5867
+  Linux 5.15.167-android14-11, armv7l
+  #2 SMP PREEMPT Thu Aug 14 23:33:51 CST 2025
+  Android Clang 16.0.2, build 9394278, based on r475365b; LLD 16.0.2
+
+Saved live-identity.txt, live-config.gz, and live.config. The latter came
+directly from /proc/config.gz, not a guessed defconfig. Important settings:
+  CONFIG_MSTAR_MT5867=y, CONFIG_MSTAR_CHIP_NAME="mt5867"
+  CONFIG_MODVERSIONS=y, CONFIG_LTO_NONE=y
+  CONFIG_MODULE_SIG and CONFIG_KEXEC are not set.
+
+The loaded module list includes utpa2k, mik, misck, mwgifker, xcker,
+mali_kbase_mt5867, mstar_fbdev_mi, 8733bu, and audio/display/TV components.
+A replacement kernel must account for their ABI. Matching a version string
+or having a similarly named SoC does not establish module compatibility.
+
+BEST SOURCE CANDIDATE
+
+Repository:
+  https://github.com/techyminati/android_kernel_oneplus_mt5867
+Branch:
+  android-14.0 (the default android-11.0 branch is only Linux 4.19.116)
+Pinned revision:
+  3543dbbd43a7e69112b1169b34171d7bd745cdee
+Pinned source archive:
+  https://codeload.github.com/techyminati/android_kernel_oneplus_mt5867/tar.gz/3543dbbd43a7e69112b1169b34171d7bd745cdee
+Local archive:
+  oneplus-mt5867-android14-3543dbbd.tar.gz
+SHA256:
+  048a1cb80336c823b3a705dbd10a413091d635f30e5c83645f4b91f562e318a3
+
+The root Makefile reports Linux 5.15.148. The May 1, 2025 import commit
+5d41f2b5e930c8cd1b8e7e361bd67b76685a65f5 describes OnePlus TV Y1S Android
+14 release 2503121853 and BSP "OPPO 9216 TV U_14". Subsequent commits import
+the Dubai defconfig and MStar drivers. This is the maintainer's provenance
+statement, not independent verification against an original OPPO archive.
+
+The full archive was inspected, avoiding GitHub recursive-tree truncation:
+  85,579 archive entries; 1,756 Kconfig-named regular files
+  177 regular files specifically under mstar2/hal/mt5867/
+  all 147 active CONFIG_MSTAR_*, CONFIG_MP_*, CONFIG_MS_* symbols from
+  the live TV have definitions somewhere in the published Kconfig files
+  all those 147 values also match arch/arm/configs/dubai_defconfig
+
+This count checks definitions and saved values, not Kconfig reachability,
+link success, hardware behavior, or ABI compatibility. The tree includes
+MT5867 CPU/board code, Ethernet, GPIO, IR, eMMC/SDIO, USB, timers/power,
+GOP graphics, ALSA audio, DMIC, and other HAL directories.
+
+Concrete build gaps and cautions:
+  - drivers/mstar2 and arch/arm/mach-mt5867 are absolute symlinks into
+    /home/ubuntu/ack. Raw GitHub requests through them return 404 although
+    their targets exist under the repository's root mstar2 directory.
+    research/g13-kernel/prepare.py now safely relocates these links.
+    The build skips genlink.sh because it mishandles an O= output directory.
+  - drivers/mstar3party points to /home/ubuntu/ack/mstar3party, but the
+    root mstar3party directory is absent. No Kconfig or Makefile references
+    were found, and it is not required by the successfully built G13 config.
+  - dubai_defconfig's header says 5.15.90 and records Clang r475365b,
+    while the tree's Makefile says 5.15.148 and build.config.constants
+    selects r487747c. Our captured G13 configuration/toolchain identity
+    is the better starting point for a G13 build audit.
+  - No matching complete TCL userspace/module source set was identified.
+    Existing binary modules require an explicit ABI compatibility check.
+  - 5.15.148 is older than the installed 5.15.167. Moving this driver-bearing
+    tree to 5.15.180 or later requires integration and validation; it is
+    not an already published, tested newer G13 kernel.
+
+Evidence: oneplus-archive-audit.json, oneplus-live-vendor-config-diff.json,
+oneplus-mt5867-paths.txt, oneplus-archive-paths.txt, oneplus-android14/,
+oneplus-inspection/, and saved branch/commit API responses.
+
+TCL AND OTHER SOURCE RESULTS
+
+TCL's published source index:
+  https://github.com/TCLOpenSource/TCL_Kernel_OpenSource
+
+1. TCLOpenSource/mt9221U: Android U, Linux 5.15.144; revision
+   eaf0c8bd0ea03ab01b0fa64de5c7c5617c0851cc. The source index names S4K,
+   S5K, V5C and related models, but not this G13/T221T10 firmware.
+   Full archive audit: 78,870 entries, 1,615 Kconfig-named regular files.
+   None of our 147 active vendor symbols is defined. No MT5867 HAL exists.
+   The README's arch/arm/configs/defconfig is absent too. The included
+   arch/arm/mach-mstar code supports Infinity/Mercury camera SoCs, not
+   evidence of support for this TV. Insufficient for a G13 rebuild.
+   Archive SHA256:
+   86e23f1f4f76680308d7ae9207769020e76df9c6b1aa2083e3417fa3d3695e5e
+
+2. TCLOpenSource/mt9221: Linux 4.19.116, revision
+   098aa173622fa59a5531b9b01d8f9fc3b0e539f8. Contains genuine MT5867
+   hardware code, useful for reference; wrong kernel generation for V013.
+
+3. TCLOpenSource/mt9653ftv: Linux 5.15.167, revision
+   500226978806dac3f2a8be4ffc0f252ab485a390. Different TV family; ARM64
+   GKI-oriented instructions, no MT5867 paths in the inspected architecture
+   and driver trees. Matching numeric version does not make it suitable.
+
+4. TCLOpenSource/mt9618: Linux 5.15.180, different SoC family. Its numeric
+   match to V033 is not evidence of G13 hardware support.
+
+5. The rfexplore, Thedemon007 and Elchanz3 mt9221 forks still point to the
+   same old 4.19.116 revision. Identified rfexplore and Thedemon007 OnePlus
+   forks expose only android-11.0 at 4304cd46f3b44b7c3998b2009f16e0c295e49d2e.
+   Generated TWRP device trees use prebuilt kernels and are not source trees.
+
+Search coverage included all 17 public TCLOpenSource repositories,
+Makefiles and available build READMEs, candidate branches/forks/history,
+GitHub repository searches with and without forks, general web searches
+for G13/T221T10/MT9221/MT9216/MT5867, English and Chinese source-code terms,
+GitLab/SourceForge/Gitee queries, and Linux-Chenxing/OnePlus leads.
+No ready-to-use Linux 6.x MT5867 TV tree or complete newer open userspace
+stack was found. This is a search result, not proof none exists.
+TCL's documented www.tcl.com/opensource endpoint redirected to the US
+storefront during this run. The guessed opensource.oppo.com did not resolve.
+
+NEWER EXACT-PLATFORM BINARY PACKAGE: TCL V033
+
+Later offline validation resolved the EROFS extraction limitation below and
+checked the complete V033 payload, driver inventory, security policy and
+compiled Lean image preparation. See research/G13_V033_OFFLINE.txt for current
+results and the mandatory second-stage updater findings. The earlier partial
+extraction observations below are retained as history.
+
+Fresh queries using the existing stock-updater research script, project
+20046, returned V8-T221T10-LF1V033 when starting from V013, and no newer
+upgrade when starting from V033. These used dummy unique identifiers.
+
+  Firmware: V8-T221T10-LF1V033
+  Package bytes: 1,379,019,088
+  MD5: 9747ffa60fd630535da5c8a749ee7fdb
+  SHA256: e3e51c77cbd1b55ce28c5190e19640d15ba8ba31d424f376b98515e6cd431fb9
+  Android: 14 / AU21
+  Security patch: 2026-03-01
+  Kernel: 5.15.180-android14-11
+  Kernel build: Thu Apr 23 18:17:53 CST 2026
+  Compiler: same Clang 16.0.2 r475365b / build 9394278 as live V013
+
+The kernel version was read from the actual extracted boot image. Its
+embedded config preserves every set-valued entry in live.config, adding:
+  CONFIG_PROC_MEM_ALWAYS_FORCE=y
+  CONFIG_TCL=y
+  CONFIG_TCL_DYBRIDGE=m
+  CONFIG_VENDOR_EDIT=y
+This is a configuration comparison, not a source diff or boot test.
+
+The OTA is a full A/B package for G13_2K_US. Its 19 partitions include
+boot, init_boot, vendor_boot, dtbo, vendor_dlkm, system_dlkm, vendor,
+system, system_ext, product, linux_rootfs_a, and tvservice. Thus it supplies
+the vendor's userspace/module set along with the newer kernel. It also
+contains mboot; it must not be treated as a kernel-only update.
+
+The earlier whole-file signature verification against the stock V013
+recovery certificate is recorded in:
+  /home/eduardo/tv_hack/assets/research/g13-usb-reader-20261101/v033-verification.json
+This run recalculated the full archive SHA256 and obtained exactly the
+same value. An attempted rerun of that Python signature verifier stopped
+because this checkout's Nix shell lacks asn1crypto; it was not represented
+as a fresh signature verification.
+
+This run extracted vendor_dlkm, system_dlkm, vendor, linux_rootfs_a and
+tvservice with payload-dumper-go's default per-image hash checks enabled;
+the tool exited successfully. Images and hashes are in v033-images/ and
+v033-extracted-image-hashes.json. The text listing of all payload partitions
+is saved as v033-payload-manifest.txt.
+
+Host fsck.erofs successfully extracted system_dlkm but failed to fully
+decompress vendor_dlkm and vendor. Their extraction directories are PARTIAL.
+The workspace previously recorded the same class of problem on G13 stock
+images. Consequently individual V033 vendor modules were not fully
+inspected or matched to running V013 modules. Do not infer matching module
+ABIs from raw strings in a compressed image or from the config comparison.
+
+The package is already retained at:
+  /home/eduardo/tv_hack/assets/research/firmware/V8-T221T10-LF1V033/V8-T221T10-LF1V033.zip
+Fresh download URL and server responses are saved in firmware-current.json,
+firmware-after-v033.json and v033-summary.json. URLs expire; regenerate with:
+  nix develop -c python3 research/new-tv-20261031T183329Z/query-firmware.py \
+    --project 20046 --output assets/research/NEW-UNIQUE-PATH.json
+
+NEXT DECISION
+
+For a newer vendor-supplied system, assess a V033 trial with its coherent
+kernel/module/userspace set. The prior V033 USB recovery attempt did not
+establish a successful install. Read RECOVERY_NOTES.txt and the current
+G13 native-startup/recovery notes before any boot-state change; account for
+the custom init_boot, metadata entry selection, and modified MBOOT logo.
+
+The pinned OnePlus Android 14 source has now been built and reached a
+working userspace on the partial MT5867 QEMU machine. Source/build repairs,
+the six emulation initcall exclusions and a reproduced Wi-Fi GPIO/FDT
+incompatibility are recorded in research/g13-kernel/README.txt. Measure
+the remaining module ABI and device-tree differences before a hardware
+trial. Physical G13 boot and working TV peripherals remain unverified.

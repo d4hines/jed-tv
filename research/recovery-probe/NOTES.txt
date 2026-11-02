@@ -1,0 +1,280 @@
+Experimental stock-recovery entry probe for TCL 32Q3K
+
+update_signed.zip is a 22-byte empty ZIP, containing only an end-of-central-
+directory record. It contains no files, updater executable, scripts, firmware,
+or signature. It is deliberately not an installable update.
+
+The ZIP has been copied to the owner's USB stick and trials are recorded
+below. The following is static analysis of the official
+V8-T221T04-LF1V122 MBOOT, not proof of the installed V109 implementation or a
+hardware-tested procedure.
+
+Evidence (runtime addresses; file offset = address - 0x273fdc00):
+
+* get_boot_mode_from_keypad at 0x274211bc recognizes a long logical 0xd5
+  press as USB-upgrade mode. Mapping this to the Q3K's physical button and
+  exact timing is still unverified.
+* do_bootcheck at 0x27421a48 tries custar. If that returns -1, it runs
+  ota_zip_check and, on a result other than -1, boots the installed recovery.
+* custar starts by saving upgrade_status=ongoing. With no recognized firmware
+  files, its 0x274928b0 path clears force_upgrade, sets upgrade_status=NULL,
+  saves the environment, and returns -1 at 0x27492ab8. This is an environment
+  write even when no firmware payload exists.
+* ota_zip_check_usb at 0x27491340 first attempts filenamefind with the prefix
+  from ForceUpgrade_path and suffix .zip. It may save ForceUpgrade_OTAPath.
+  If that variable is absent, the fallback is /update_signed.zip. A stale
+  saved ForceUpgrade_OTAPath could prevent this fallback from being used.
+* The call to check_file_partition at 0x274916c4 only checks that a file can
+  be read. The latter constructs fatload usb ... <filename> 1, i.e. a
+  one-byte RAM read, at 0x2741d96c. It does not validate ZIP content.
+* At 0x274917e0 onward, the OTA handler constructs a 2048-byte boot control
+  message: boot-recovery, with recovery arguments for --update_package,
+  --label, and --uuid. It writes this to misc at 0x2749197c. This replaces
+  existing recovery arguments, including a potentially pending data wipe.
+* boot_mode_recovery at 0x2741fb68 uses readKL recovery; bootKL, loading the
+  installed recovery partition rather than a recovery image from USB.
+
+Thus the hypothesis is that a nonempty but payload-free ZIP can request
+installed recovery, where package verification should fail. This does NOT
+establish that the recovery menu will remain visible. AOSP Android 11
+production recovery can reboot after an error if text UI is not visible;
+TCL's custom V109 recovery has not been extracted or checked. AOSP's
+button-limited UI supports a long press to show text, but that behavior is
+also unverified on this TV.
+
+Source code inspected directly via the Gitiles format=TEXT endpoint:
+https://android.googlesource.com/platform/bootable/recovery/+/refs/tags/android-11.0.0_r1/install/install.cpp
+https://android.googlesource.com/platform/bootable/recovery/+/refs/tags/android-11.0.0_r1/recovery.cpp
+https://android.googlesource.com/platform/bootable/recovery/+/refs/tags/android-11.0.0_r1/recovery_ui/ui.cpp
+
+Use only the empty probe ZIPs described here at the root of a FAT32 USB flash
+drive, with no real firmware/update files. Do not rename these ZIPs to .bin,
+.pkg, or .img. Disconnect
+the USB-A-to-A laptop cable while the flash drive is attached. No storage
+formatting, device erases, relocking, or replacement-firmware flashing is
+part of this probe. Existing recovery can subsequently perform the already
+authorized factory reset if a usable menu is reached.
+
+USB preparation completed on 2026-10-30, with explicit owner approval to
+erase and format the PNY stick:
+
+* Device: usb-PNY_USB_3.1_FD_07210C69972A5005-0:0, 31,042,043,904 bytes.
+* Previous ISO9660 filesystem backed up to assets/research/recovery-probe/usb-backup/nixos-26.11-aarch64.iso
+  (660,127,744 bytes) and compared byte-for-byte against the source. This is
+  the installer filesystem image, not a full backup of the entire USB stick.
+  SHA256: ccc8849f87c722a59a940bd62867d97a5f7849c025e724a73e7c605804907b83
+* Recreated as MBR, one FAT32 LBA partition starting at sector 2048,
+  label TVRECOVERY, filesystem UUID 6ECB-21F4.
+* Root contains only update_signed.zip (22 bytes).
+  SHA256: 8739c76e681f900923b900c9df0ef75cf421d39cabb54650c4b9ad19b6a76d85
+* Flushed writes, unmounted, passed read-only fsck.vfat, remounted read-only,
+  compared the ZIP again, then unmounted. Ready to disconnect from laptop.
+* First trial reported by the owner: TV powered on with no visible picture;
+  its LED eventually blinked. After releasing the physical button, it
+  restarted, showed the normal logo, and shut down again. No recovery menu
+  was seen. This did not resolve the original startup failure and does not
+  establish that the bootloader read the ZIP or entered recovery.
+
+Follow-up LED analysis, also V122 only: show_Error at 0x27491f30 can issue
+led time 0xFA (or usb_upgradeerror_flicker's configured value), then call
+jump_to_console at 0x27423690. That console can enable a 10-second watchdog
+when WDT_ENABLE is 1. Thus blinking and a later restart are not sufficient
+to identify recovery or successful package detection. No UART observation
+has confirmed that this was the path taken by V109.
+
+USB returned to laptop after the first trial:
+
+* Read-only inspection found only the original update_signed.zip, unchanged
+  by byte comparison and SHA256. No new files or logs were present.
+* fsck.vfat -n reported FAT32 status byte 65 changed from 00 to 01 compared
+  with its backup boot sector, and the dirty flag was set. It had passed
+  clean checks before the TV trial. This supports access to the stick by
+  the TV but does not identify whether Android or recovery mounted it.
+* Cleared the dirty flag with fsck.vfat -a; subsequent -n check was clean.
+* Added V8-T221T04-LF1V109.000732.zip as a byte-identical 22-byte empty ZIP.
+  The firmware-looking filename is only a probe name, not a firmware image.
+  The installed V109 environment's actual ForceUpgrade_path and
+  ForceUpgrade_OTAPath remain unknown. This second name tests the known
+  V122 prefix-search mechanism using the owner's recorded firmware name.
+* Both ZIPs verified against the same source/hash above; writes flushed,
+  stick unmounted, final read-only filesystem check clean.
+
+Second trial reported by owner: screen showed "installing updates", then
+"error", then restarted into the original logo-and-shutdown failure. This
+is consistent with reaching stock recovery through the USB package path and
+rejecting the empty ZIP. The error text alone does not identify the exact
+failure or conclusively establish which file name was selected.
+
+Android 11 AOSP source rechecked after this report:
+* recovery.cpp lines 850-873 displays an install error for five seconds when
+  text is hidden, then reboots. If text is visible, it calls PromptAndWait.
+* recovery_ui/ui.cpp lines 545-560 toggles text on KEY_VOLUMEUP or KEY_UP
+  release while KEY_POWER is held on devices exposing power/up/down keys.
+  On button-limited devices a long press toggles hidden text instead.
+* TimeKey at lines 388-397 defines a long press as 750 ms.
+
+Next proposed UI test: repeat the successful USB entry procedure, release
+the physical button at the LED blink, and when the update/error screen is
+visible hold the TV's physical power button, tap remote Volume Up once,
+then release the physical button after roughly one second. The aim is to
+make recovery text visible before its automatic reboot. TCL V109 key input
+and menu handling remain unverified; do not describe this as an established
+32Q3K recovery shortcut.
+
+Follow-up on 2026-10-30: owner reports the physical-Power + remote-Volume-Up
+attempt did not visibly do anything. Owner has a USB keyboard but no hub.
+
+Offline V122 recovery analysis (not a dump of the installed V109):
+* Downloaded official OTA vendor.new.dat.br by ranges, verified ZIP CRC,
+  reconstructed vendor.img with complete block coverage, extracted
+  vendor /etc/recovery.img and its gzip CPIO ramdisk. Recovery image SHA1
+  e0a9e830a8b3c22164b456c6f2a4d261f4f82e59 matches install-recovery.sh.
+* librecovery_ui_ext.so's TCL UI uses base RecoveryUI::CheckKey.
+  Base CheckKey at 0x1c2f8 toggles text when KEY_UP (103) or KEY_VOLUMEUP
+  (115) is released while KEY_POWER (116) is held on three-button devices.
+  Long press instead toggles text on button-limited devices.
+* minui input implementation has inotify-based hotplug: ev_init watches
+  /dev/input for IN_CREATE; inotify_cb at 0x1d724 opens event* devices,
+  checks supported input event types and registers the input callback via
+  ev_add_fd. Thus a keyboard need not be connected at recovery startup in
+  V122. V109 and this keyboard's actual behavior remain untested.
+* IMPORTANT correction to earlier AOSP-based menu advice: actual TCL
+  start_recovery error/corrupt status path at 0x17236..0x1725e sets the error
+  background, waits five seconds if text is hidden, then goes to cleanup
+  at 0x18268 regardless of text visibility. PromptAndWait entry at 0x1727e
+  is gated on status == 3 (INSTALL_NONE) and visible text. Therefore
+  showing text during a failed update is NOT a demonstrated way to keep
+  this TCL recovery open or reach the reset menu. It may only expose logs.
+* second_udisk_removed_notice at 0x4157c can instead enter an indefinite
+  'Wait for external storage insert' display on certain removed-media
+  errors. To avoid changing the initial package-read failure, a keyboard
+  swap test should be made AFTER the Error display appears, not while
+  Installing Updates is still being processed.
+* Proposed diagnostic input test: reproduce the successful USB entry,
+  release physical Power at the blink, wait for Error, swap the empty-ZIP
+  stick for keyboard, aim remote at TV and hold remote Power while tapping
+  and releasing keyboard Up, then promptly release Power. Text may appear
+  only briefly before reboot; photograph if it does. This is an experiment
+  based on V122, not a confirmed V109 recovery shortcut or repair.
+* A possible physical-button keycode mismatch remains speculative: app
+  keypad config values are not sufficient to establish Linux input codes.
+
+Artifacts in ../../assets/research/firmware/V8-T221T04-LF1V122/: recovery-hotplug-disassembly.txt,
+recovery-key-disassembly.txt, recovery-menu-disassembly.txt, and helper
+inspect-recovery-elf.py. Helper uses Thumb disassembly and skips undecodable
+bytes in literal pools; data must not be mistaken for executed instructions.
+No downloaded firmware was installed on the TV, and no new USB changes were
+made during this analysis.
+
+Revised USB probe, 2026-10-31 UTC (2026-10-30 local):
+Owner cannot perform the 3-second keyboard swap and requested a better USB
+probe. PNY stick was reconnected and identified by the same USB serial.
+Both existing empty ZIP hashes still matched the original. No logs or other
+files were present. Stick was mounted read-only for inspection, then unmounted.
+
+Prepared a volume-label argument-injection probe for persistent fastbootd:
+* New 11-byte FAT label is hex 0a2d2d666173740a202020 (LF --fast LF spaces).
+  This is intentionally nonstandard metadata, not a firmware payload.
+* Actual V122 MBOOT label-read path at 0x2743b698..0x2743b804 copies the first
+  8 bytes of a root-directory volume-label entry. No newline filtering is
+  present in the inspected path.
+* ota_zip_check_usb appends the label after --label= in the newline-delimited
+  BCB recovery field. The injected line is --fast, an unambiguous abbreviation
+  of --fastboot in the actual recovery main OPTIONS table.
+* validate-label-trigger.py ran the official MBOOT label-copy and BCB-builder
+  instructions, plus the official recovery libc getopt_long implementation,
+  in Unicorn. Simple libc routines and hardware/FAT discovery were stubbed;
+  no physical TV code ran. The resulting actual parser options were unknown
+  update_package, unknown label, recognized fastboot, unknown uuid. This is
+  expected because main ignores options destined for start_recovery.
+* Static inspection of actual recovery main at 0x14298..0x142fc and 0x14ae4..
+  0x14afc confirms fastboot is gated by ro.boot.dynamic_partitions (true in
+  this recovery's prop.default) and selects StartFastboot instead of the
+  update-processing start_recovery function. Installed V109 remains untested.
+* prepare-fastboot-label.py verified stick serial-path, whole-device byte
+  count, MBR single-partition layout, FAT geometry, UUID, previous label,
+  backup BPB consistency, and unmounted state before writing. It changed
+  only the 11-byte label fields in primary/backup BPBs and the root-directory
+  label entry. File contents and partition layout were not changed.
+* Three 512-byte sectors at absolute offsets 1048576, 1051648, 16236544 were
+  backed up in assets/research/recovery-probe/usb-backup/fastboot-label-20261031T041727Z.json, then patched,
+  fsynced, block cache invalidated and all three read back exactly as expected.
+  The stick is unmounted and ready to remove. A trailing findmnt exit 1 means
+  it was not mounted, not a failed write.
+* Emulator evidence: label-trigger-validation.json. The probe has not yet
+  been tried on the TV and does not demonstrate root or restored normal boot.
+
+Owner's next test: use the previously successful USB-start procedure and
+release physical Power on the LED blink. Expected result, if V109 shares the
+parsing behavior, is a persistent fastbootd screen. Then remove the stick and
+connect the TV to the laptop with the previously used USB cable for read-only
+identification. No speed-sensitive keyboard swap is needed for this test.
+
+LIVE RESULT: owner confirms the crafted-label probe reached a persistent
+Fastbootd screen on the actual V109 TV. The normal remote moves the menu
+highlight; both Enter recovery and Reboot to bootloader are listed. This
+validates the USB metadata trigger on this unit, not USB Fastbootd transport.
+Laptop fastboot/adb device lists stayed empty after a cable reconnect. The
+USB kernel monitor recorded only the laptop dock/hub and its Ethernet NIC,
+with no TV USB enumeration. Thus no Fastbootd command has been sent.
+
+Proposed next action: use the remote's Reboot to bootloader, cable attached,
+then identify the bootloader over USB and request fastboot reboot recovery.
+V122 StartFastboot calls clear_bootloader_message before its menu. Its Enter
+recovery case switches modes in the same process with the original argument
+vector, which still contains the empty-ZIP update request; therefore a fresh
+recovery boot is preferred. The bootloader's earlier USB transport did work
+on this V109 TV. Do not infer that a black bootloader screen means shutdown.
+
+LIVE recovery-menu repair, 2026-10-31 UTC (2026-10-30 local):
+* Remote Reboot to bootloader returned USB 0e8d:5000 at usb:3-1.3.
+  Read-only variables reconfirmed C06_eu, is-userspace:no, unlocked:yes,
+  secure:no, bootloader 01.01.250118.
+* fastboot reboot recovery returned OKAY. Owner reports a brief No command
+  screen followed by reboot. This matches the inspected TCL no-argument
+  path, which exits when text is hidden. No format occurred in this attempt.
+* Prepared cache-menu.img, exactly 104857600 bytes, containing an ext4
+  filesystem with /recovery/command equal to the 12 bytes '--show_text\n'.
+  Used mke2fs.android with V122 recovery's mke2fs.conf, 4096-byte blocks,
+  256-byte inodes, initialized inode tables and journal. Populated it with
+  e2fsdroid and explicit stock cache/cache_recovery_file SELinux contexts.
+  An initial canned-fs-config attempt failed before populating the image;
+  reran population successfully with e2fsdroid's standard filesystem config.
+  The unused canned config was removed.
+* e2fsck -fn passed. debugfs confirmed the sole recovery command, root-owned
+  readable file, correct security.selinux xattr, and legacy ext4 features
+  matching the stock config. Image SHA256:
+  0f2f01c087e4fa0df4ce97b5f70b5c966edee994787c3577a3ba0fc1013bedad
+* Owner returned via the USB label probe and remote Reboot to bootloader.
+  Before writing, live queries confirmed cache:ext4, size 0x06400000,
+  max-download-size 0x30000000, and unlocked:yes. Earlier interrupted query
+  only recorded waits; the subsequent complete query overwrote that log.
+* Told owner the write replaces cached files and recovery logs. Owner said
+  keep going. fastboot flash cache cache-menu.img returned sending OKAY and
+  writing OKAY; fastboot reboot recovery returned OKAY. No downloaded stock
+  firmware image, boot image, recovery image or bootloader was flashed.
+  There is no device partition readback verification; host image checks and
+  the Fastboot success responses are the write evidence.
+* OWNER CONFIRMED: Android Recovery menu now stays open and contains
+  Wipe data/factory reset. This demonstrates the cache command was used.
+* Instructed owner to select Wipe data/factory reset, confirm the already-
+  authorized factory reset, wait for completion, then Reboot system now.
+  Reset completion and successful normal boot remain pending owner report.
+
+Logs: ../../assets/research/device/cache-menu-preflash-state.txt, cache-menu-flash-result.txt,
+cache-menu-reboot-recovery.txt. Local image check: cache-menu-validation.txt.
+
+RECOVERY SUCCESS: owner reports reaching the Google TV setup screen after
+performing the stock recovery factory reset and reboot. Normal startup is
+restored. This supports the skipped recovery-format hypothesis; the original
+failure log was not captured, so the precise mechanism is not proved.
+Bootloader unlocked:yes was verified immediately before the successful cache
+write/reset sequence. Its post-reset state has not yet been queried. No root
+access has been demonstrated, and no boot/bootloader/stock OTA was flashed.
+Current laptop ADB and Fastboot lists are empty, consistent with setup and
+USB debugging requiring re-enabling after the factory reset.
+
+Next prerequisite for root work: finish setup, re-enable USB debugging and
+reauthorize the laptop. Then inspect the running build and boot lock-state
+properties without another unlock/reset. Exact installed boot/vbmeta backups
+remain missing; the available V122 images are not backups of installed V109.

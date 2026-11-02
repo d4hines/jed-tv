@@ -1,0 +1,211 @@
+New TCL unit: identification, Fastboot and firmware discovery
+Recorded 2026-10-31 UTC
+
+Captured device data, query responses and downloaded artifacts referenced
+below are now under assets/research/new-tv-20261031T183329Z/ (from the
+workspace root). Authored source and these findings remain in research/.
+
+LATER LIVE UNLOCK RESULT (2026-10-31T18:42Z)
+
+After the earlier discovery below, the owner explicitly requested the same
+ordinary Fastboot unlock. Fresh queries confirmed the expected new device,
+bootloader 01.01.250814, unlocked:no and slot a. flashing unlock was issued
+once and returned OKAY after 0.211s. Immediate read-only getvar queries then
+reported unlocked:yes, secure:no and current-slot:a. A single normal fastboot
+reboot returned OKAY. No reboot bootloader, critical unlock, flash, relock,
+slot switch, or separate erase was issued. The pending stock recovery wipe
+was left to run. The owner subsequently confirmed "Google TV setup screen",
+establishing successful normal startup after the unlock/reset. ADB initially
+became offline and TCP port 5555 at the previous static address was not
+reachable. Authorized USB ADB subsequently returned as serial 18ACC22D1C47;
+running Android confirms unlocked/orange, boot_completed=1, V013/AU13 and
+SELinux Enforcing. ADB remains uid2000. There is no need to repeat unlock.
+This supersedes the pre-unlock statements below.
+Evidence: unlock-attempt-20261031T184216Z/.
+Post-unlock evidence: post-unlock-adb-state.txt.
+
+LATER STOCK READBACK (2026-10-31, COMPLETE AND VERIFIED)
+
+The owner requested a dump of the installed firmware. A temporary targetSdk32
+app can reach the MediaTek factory HAL because the live vendor SELinux policy
+grants untrusted_app_32 factory HAL find/call access. The earlier ADB-shell
+probe lacked that permission. The service reads as uid0; no root shell or
+security-policy changes were used. No firmware update or partition write was
+performed. The old shell probe directory /data/local/tmp/tcl-g13-probe is
+confirmed absent after the reset.
+
+The read-only helper streams bounded raw eMMC ranges over an authenticated
+ADB-forwarded socket. Actual sysfs geometry gives 50 non-userdata partitions,
+two hardware boot areas, and the first 2 MiB of eMMC: 53 images, 3359 MiB.
+Each chunk is hashed during transfer and independently reread from the source;
+each completed host image is then rehashed. The native read path was checked
+to preserve 64-bit offsets through fseeko64, including above 2 GiB.
+
+Capture directory: ../../assets/backups/g13-v013-stock-20261031.
+Completed 19:10:54Z: 53 images, 3522166784 bytes (3359 MiB), all verified.
+All 146 chunks matched independent second source reads. An additional full
+host pass verified every chunk and full-image hash, sizes, source coverage,
+read-only modes and SHA256SUMS. See manifest.json and host-verification.json.
+The temporary helper was uninstalled; no ADB forwards remain. Final Android
+state is still V013/AU13, unlocked/orange, boot_completed=1, slot a and
+SELinux Enforcing. See helper-cleanup.json in the backup directory.
+Userdata/RPMB are excluded and restoration is untested.
+Reproduction and limits: ../G13_READBACK_NOTES.txt; tools: ../g13-readback/.
+
+SCOPE AND CURRENT STATE
+
+The owner reported rear-label model "31Q3K". Keep that spelling as reported;
+Android's generic Smart TV model does not independently establish retail model.
+The owner clarified that bootloader unlocking is the immediate objective,
+not root. The previous G06/V109 unit and its backups are a separate device.
+
+Before the owner's manual reboot, authorized ADB at 192.168.77.2:5555 showed:
+  product/device: G13_2K_US / G13
+  hardware: mt5867 / MT9221-Lite / t56
+  firmware: V8-T221T10-LF1V013
+  fingerprint: TCL/G13_2K_US/G13:14/UKN2.241110.001/AU13:user/release-keys
+  Android 14, ARM32, Linux 5.15.167-android14-11
+  bootloader: 01.01.250814
+  vbmeta.device_state=locked, verifiedbootstate=green, boot_completed=1
+  sys.oem_unlock_allowed=0; ro.oem_unlock_supported was unset
+  SELinux Enforcing; ADB uid2000 shell
+  project ID 20046; client type TCL-NA-MT9221-03
+The project and client type were observed in the stock SDK's log messages in
+updater-log-snapshot.txt, not inferred from the original TV's project number.
+
+The owner then manually rebooted to bootloader and connected USB-A to USB-A.
+Live read-only Fastboot commands succeeded using current USB path usb:1-1.1:
+  USB ID 18d1:4ee7, manufacturer tcl, product tcl9216
+  is-userspace: no
+  product: tcl9216
+  version-bootloader: 01.01.250814
+  unlocked: no; secure: yes
+  current-slot: a; slot-count: 2
+  max-download-size: 0x20000000
+  flashing get_unlock_ability: INFO lock, OKAY
+  max-fetch-size: FAILED, invalid var
+See fastboot-readonly-state.json and fastboot-partition-queries.json.
+No unlock, flash, erase, slot switch, settings change or reboot command was
+sent by the assistant to this new TV. It was left in bootloader mode.
+
+PARTITION DIFFERENCES
+
+This unit uses A/B slots, init_boot and vendor_boot. There is no dedicated
+recovery partition in its live by-name list. Important Fastboot sizes:
+  MBOOT: 0x00500000 (5 MiB)
+  boot_a: 0x03500000 (53 MiB)
+  init_boot_a: 0x00800000 (8 MiB)
+  vendor_boot_a: 0x03000000 (48 MiB)
+  cache: 0x00500000 (5 MiB)
+The original G06 recovery-menu cache image is 100 MiB. DO NOT flash it to
+this 5 MiB partition. The G06 trigger/recovery sequence is not validated here.
+Do not use old G06/T221T04 backups, V122 images, or its raw partition offsets.
+
+FIRMWARE FOUND AND DOWNLOADED
+
+Public web searches found no exact T221T10 firmware download. TCL's official
+Q3K consumer page provided manuals, not an exposed firmware archive:
+  https://support.tcl.com/en_US/q3k-series
+
+The new TV's stock /product/app/TTVSCore/TTVSCore.apk was pulled and examined.
+Its ProtocolAddrChanger and RequestsXmlUtils establish the production updater
+protocol. JADX reported 33 errors; relevant request code was recovered.
+The laptop-only query-firmware.py requests metadata from:
+  https://na-filter-upgrade.huan.tv/service/upmp/upgradeIncrInterface
+Only platform information and dummy unique identifiers are sent. The TV's
+serial, MAC and account tokens are not sent by this script. It does not ask
+the TV to download or install anything. Project 0 requests returned no offer;
+project 20046/current V013 returned a full V033 package. A hypothetical V000
+request returned no offer even with project 20046; that does not establish
+historical firmware availability.
+
+Server response: firmware-query-project20046.json
+  appid: V8T221T10
+  version: V8-T221T10-LF1V033
+  version ID: 4230
+  size: 1379019088 bytes
+  server MD5: 9747ffa60fd630535da5c8a749ee7fdb
+  increment: 0 (full package)
+  update time: 2026-07-15 16:00:00
+  download host: na-global-auth-tclupdate.cedock.com
+The signed URL is time-limited; regenerate metadata if needed.
+
+The complete ZIP is saved mode0400 at:
+  ../../assets/research/firmware/V8-T221T10-LF1V033/V8-T221T10-LF1V033.zip
+Its downloaded length and full MD5 match the server response.
+SHA256: e3e51c77cbd1b55ce28c5190e19640d15ba8ba31d424f376b98515e6cd431fb9
+See that directory's download-verification.json and contents.json.
+OTA cryptographic signature verification has NOT been performed. This is
+an update offered for this platform/project, not an exact installed-V013
+backup, a capture of unique calibration data, or a tested recovery package.
+No update was installed.
+
+ZIP metadata:
+  ota-type=AB; pre-device=G13; post-sdk-level=34
+  post-build=TCL/G13_2K_US/G13:14/UKN2.241110.001/AU21:user/release-keys
+  post-security-patch-level=2026-03-01
+The payload contains 19 partitions including mboot. payload-dumper-go 2.0.0
+extracted mboot, boot, init_boot, vendor_boot, vbmeta, vbmeta_system and dtbo
+with its default hash verification enabled; the command exited successfully.
+Images and host SHA256SUMS are in that firmware directory's images/.
+
+OFFLINE UNLOCK ANALYSIS OF V033, NOT INSTALLED V013
+
+Extracted mboot.img SHA256:
+  dd2c03211bbe17ed8b66d923611f46f134ac8005f64c2d8f5a598502376379da
+It identifies as bootloader 01.01.260423. The installed version remains
+01.01.250814; do not claim binary identity or tested unlock success.
+
+Mapping: virtual address = file offset + 0x273fdc00; ARM code starts at
+file offset 0x2400 / virtual 0x27400000. The preserved disassembly helper
+was adapted from the previous offline tool without modifying the original.
+
+USB Fastboot initializes at 0x274c5728. It computes table base 0x276a4ca8,
+then registers "flashing" using the pointer at base+0x34c = 0x276a4ff4
+(file offset 0x2a73f4), whose value is 0x274c3f14.
+See mboot-init-prefix.txt, mboot-registration.txt and mboot-flashing-handler.txt
+in the V033 firmware directory.
+
+That handler obtains current unlocked state via 0x274b7bd8. Its
+get_unlock_ability branch returns lock or unlock based on that state. It is
+not a separate OEM permission check in this inspected implementation.
+The live installed bootloader's INFO lock response is consistent with this.
+
+The ordinary unlock branch at 0x274c4078 compares "unlock", requires current
+locked state, prints "wipe user data", calls 0x274b701c, then calls the state
+writer 0x274dee40 with zero. No separate OEM setting, token check or on-screen
+confirmation is called in this handler. It then sends Done!! without checking
+the state writer's return. A later live read-only unlocked query is necessary.
+
+Wipe helper 0x274b701c configures misc, writes 85 bytes from 0x276a2a96 to
+offset zero, then executes "mmc erase.p userdata". The 85-byte constant is
+boot-recovery, padding, then recovery\n--wipe_data\n. This is the same pending
+recovery-wipe design encountered on the older firmware. See mboot-wipe.txt.
+
+ASSESSMENT AND NEXT OPERATION
+
+The ordinary Fastboot unlock route is a well-supported candidate for this
+unit; the newer same-platform firmware retains the familiar implementation.
+Unlock success on the installed V013 remains untested. Android's
+sys.oem_unlock_allowed=0 does not by itself prove rejection by this handler.
+Root is not a prerequisite for issuing the bootloader unlock command.
+
+An actual unlock erases the new TV's user data/settings and changes persistent
+state. This session performed only read-only Fastboot queries. If the owner
+chooses to unlock, re-identify the USB path, check unlocked:no, issue ordinary
+flashing unlock once, check unlocked using getvar only, and allow the pending
+recovery wipe to complete. Do not insert reboot bootloader after unlocking.
+Use normal reboot for the pending recovery flow and wait for normal setup.
+This planned sequence is inferred from V033, not tested on V013. Do not issue
+unlock_critical, relock, flash old cache images, or switch slots as part of it.
+
+EARLIER ROOT CHECK (NO LONGER THE TASK)
+
+The old /dev/sbinder and Tcl TvPlayerApi/TFactoryApi interfaces are absent.
+A fixed read-only MediaTek factory API probe failed before any file reads:
+getServiceFailure=java.util.NoSuchElementException. Fresh logcat ties this to
+SELinux denying shell hwservice_manager find on hal_tv_tvfactory_hwservice.
+No root was obtained. Before unlocking, the inert probe JAR had been left in
+/data/local/tmp/tcl-g13-probe. The later factory reset is expected to remove
+it along with userdata; this has not been checked through ADB after reset.
+See G13FactoryReadProbe.java, read-probe-result.txt and read-probe-logcat.txt.

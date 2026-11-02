@@ -1,0 +1,147 @@
+G13 V013: tvinit under recovered Android
+2026-11-01 UTC
+
+Current result: native startup is installed and automatically runs the
+launcher without zygote/system_server. Ethernet ADB at 192.168.77.3:5555
+plus UART is the development standard, verified across a normal reboot.
+See G13_DEVELOPMENT.txt and G13_NATIVE_BOOT_NOTES.txt. --network-only in
+run-g13.py restores host proxy/replay over Ethernet for the running launcher.
+The Android-hosted and USB-discovery results below are historical.
+
+Scope
+-----
+The owner requested Daniel's current tvinit/YouTube/Slides/Doom work on the
+new TV, and explicitly chose getting the launcher working under Android
+first. This uses the installed stock kernel and existing Android graphics
+and audio services. It does not replace PID 1, flash firmware, or validate
+the G06-specific direct MI display/audio drivers on G13.
+
+Target: serial 18ACC22D1C47, G13_2K_US, T221T10 V013/AU13, Android 14,
+Linux 5.15.167-android14-11, ARM32. adb root is available through the
+previously verified debug ramdisk; see G13_ADB_ROOT_NOTES.txt.
+
+Hardware and runtime differences
+-------------------------------
+G06's static ARMv7 musl application ABI is still suitable. G13 has a 1920x1080
+physical display with an existing Android 1280x720 override; the launcher
+and native surface use that logical size. The MStar IR receiver remains
+event2, and directional/OK/Back/Home/volume key codes match the existing
+platform mapping. Input is discovered dynamically, not fixed to event2 by
+the launcher. TV_INPUT_EXCLUSIVE grabs the launcher's private evdev handles
+so Android does not also consume those keys; closing the handles releases it.
+
+Android 14 changed the exported createSurfaceChecked signature, metadata
+namespace, getSurface constness and LayerStack wrapper. native.rs selects
+the complete Android 11 or Android 14 symbol set. The exact G13 metadata
+constructor still writes 24 bytes, verified from the captured library.
+After releasing its surfaces, the display helper exits without running
+libgui global destructors concurrently with live Binder worker threads.
+
+G13 has no /tmp or writable /. The launcher runs in its own mount namespace
+and chroot at /data/local/tmp/dande-g13/root. Its device nodes are separate
+tmpfs nodes; the existing app permission setup cannot chmod Android's nodes.
+The chroot root is bind-mounted onto itself, because the child sandbox's
+MS_PRIVATE operation requires / to be a mount point. Distinct per-app UIDs,
+noexec views, seccomp and forwarded input remain.
+Android remains the owner of its real graphics/audio services and devices.
+The outer supervisor stops the media helpers and USB relays if tvinit exits.
+
+The G13 build uses UIDs 19001/19002/19003 for YouTube/Doom/Slides, with the
+same GID 4000 and capabilities as the original Lean policy. The original
+10001/10002 identities collide with Android packages and cannot create TCP
+sockets here, even without app seccomp; adding group 3003 did not help.
+The same probe succeeds as 19001/19002. The runner refuses to start if an
+installed Android package owns one of the three G13 identities. The default
+G06/QEMU package keeps its original identities; .#g13-apps specializes only
+the fixed UID base in the build copy of the Lean table.
+
+Doom's early /dev/fb0 check now respects TV_FB_PATH. YouTube also skips its
+physical-framebuffer wait when the shared-frame backend is selected.
+
+The permissive su domain used by adb root cannot receive every Binder reply
+from enforcing Android services. android-client changes its current context
+to stock shell before exec, closes inherited su-owned descriptors and opens
+new standard streams. It retains uid0 for the private shared files. This
+allows the media helpers to use stock Binder permissions without changing
+global SELinux policy or disabling enforcement. adb root remains available.
+
+No IPv4 interface besides loopback was configured during discovery. ADB
+reverse carries the local replay and domain-limited HTTPS CONNECT proxy.
+Direct TCP reverse sockets reset on this rooted firmware: netd logs enforcing
+denials when using su-owned socket descriptors, and the host receives no
+connection. adb-relay is a static musl loopback TCP-to-abstract-Unix relay;
+ADB reverse listens on localabstract:dande-g13-proxy and dande-g13-replay.
+This path passes CONNECT and live playback without changing netd policy.
+Live TLS remains in ytplay. The runner sets the TV clock from the host UTC
+clock because the recovered offline RTC was still in August 2025.
+
+Audio has two volume controls. Android's speaker/media index was 0/100,
+so valid PCM and the first jingle were inaudible. It was set to 30/100 with
+the stock media_session volume command; the owner heard the second jingle.
+The app gain is currently 0.0075 (25% of the original 0.03 ceiling). Remote
+volume keys update that gain and tvosd publishes the overlay. The runner
+preserves both existing volume settings. If Android volume is zero again,
+run through the included shell-context helper:
+  adb -s 18ACC22D1C47 shell '/data/local/tmp/dande-g13/android-client /data/local/tmp/dande-g13/logs/volume.log /system/bin/cmd media_session volume --stream 3 --set 30 --get'
+
+Host build
+----------
+The Nix package exposes native-app-tools with pinned Rust 1.92 and its
+Android target, Clang and ELF tools. The existing Rust media builders accept
+explicit toolchain and TV library paths instead of requiring Homebrew.
+Link libraries are read from this G13, not copied from the G06 backup.
+The stale Cargo vendor hash was corrected for the current locked workspace.
+Build-time image conversion uses headless FFmpeg, without a desktop stack.
+
+Entry points:
+  python3 tools/native-app/run-g13.py
+  python3 tools/native-app/run-g13.py --stop
+
+If python3 is not on PATH, prefix these with:
+  nix shell nixpkgs#python3 -c
+After the first successful build, --no-build reuses the installed Nix outputs
+and local native helpers. Keep the USB data cable connected for Internet
+access through the host. This is a manual Android-hosted session, not an
+autostart installation or a native PID-1 boot image.
+
+--prepare-only builds and stages files without starting the UI. --no-build
+reuses assets/build/native-app-g13/build.json after local development.
+The runner verifies G13/AU13 identity, root and completed Android startup,
+then hashes every uploaded executable. Build outputs, logs and captured
+evidence remain under ignored assets/; keep that directory separately.
+
+Hardware validation
+-------------------
+Android 14 hidden 64x64 surface creation, buffer lock/post and cleanup pass.
+The AAudio bridge passes all 14 silent protocol cases on G13: 44.1/48 kHz,
+mono/stereo, fragmented PCM, counters, reset/drain and malformed requests.
+The three pixel-composition tests and eight audio-protocol host tests pass.
+The owner confirmed the launcher on the physical panel and heard the second
+one-second jingle after correcting Android's zero speaker volume.
+Slides rendered all 12 pages; forward navigation and Home passed. Doom
+reached the title screen and playable level with PCM output and no reported
+audio underruns in the captured interval. Live YouTube played Coffee Run
+(itag 136, 1280x536 at 24 fps; AAC itag 140); pause, resume, seek and Home
+passed. FFmpeg prints a nonfatal late-SEI warning on this video.
+Home leaves no Slides/Doom/YouTube process. Captured process/mount evidence
+shows unprivileged app UIDs, zero capabilities, no_new_privs=1, seccomp mode
+2, noexec root, hidden raw input and only an inert cmdline under /proc.
+The earlier Slides capture used UID 10003 before the G13 UID specialization;
+slides-g13-isolation.txt verifies the final 19003 identity after restart.
+Stopping the runtime removed its processes, display layer and ADB reverse
+entries, revealing Android's screen saver; Android stayed boot-complete,
+rooted and globally Enforcing. The real IR node retained mode 660/root:input.
+No firmware partition, boot setting or global SELinux policy was changed.
+The final integrated runner restarted successfully with both USB relays;
+CONNECT succeeded from UID 19001 and Slides launched as UID 19003. The TV
+was left on the launcher with no foreground app. See verification.json and
+final-logs/ for the final state.
+
+Evidence: assets/research/g13-app-bringup-20261101/ and
+assets/build/native-app-g13/. Exact libraries and primary AOSP Android 14
+headers/source copies are under the former directory's libraries/ and aosp/.
+Current screenshots, app-validation-logs/, *-isolation.txt, stop-state.txt,
+build.json and device-sha256.json are under assets/build/native-app-g13/.
+The exact networking probe is src/probes/g13-network.rs. AOSP's UID-based
+socket policy provides background for the observed UID distinction:
+https://android.googlesource.com/platform/packages/modules/Connectivity/+/cb9ad3af0/bpf_progs/netd.c

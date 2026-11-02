@@ -1,0 +1,70 @@
+{
+  "aarch64-apple-darwin": {
+    "rustc": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/rustc-1.92.0-aarch64-apple-darwin.tar.xz",
+      "hash": "15dee753c9217dff4cf45d734b29dc13ce6017d8a55fe34eed75022b39a63ff0"
+    },
+    "cargo": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/cargo-1.92.0-aarch64-apple-darwin.tar.xz",
+      "hash": "bce6e7def37240c5a63115828017a9fc0ebcb31e64115382f5943b62b71aa34a"
+    },
+    "rust-std": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/rust-std-1.92.0-aarch64-apple-darwin.tar.xz",
+      "hash": "ea619984fcb8e24b05dbd568d599b8e10d904435ab458dfba6469e03e0fd69aa"
+    }
+  },
+  "x86_64-apple-darwin": {
+    "rustc": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/rustc-1.92.0-x86_64-apple-darwin.tar.xz",
+      "hash": "0facbd5d2742c8e97c53d59c9b5b81db6088cfc285d9ecb99523a50d6765fc5c"
+    },
+    "cargo": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/cargo-1.92.0-x86_64-apple-darwin.tar.xz",
+      "hash": "b033a7c33aba8af947c9d0ab2785f9696347cded228ffe731897f1c627466262"
+    },
+    "rust-std": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/rust-std-1.92.0-x86_64-apple-darwin.tar.xz",
+      "hash": "6ce143bf9e83c71e200f4180e8774ab22c8c8c2351c88484b13ff13be82c8d57"
+    }
+  },
+  "aarch64-unknown-linux-gnu": {
+    "rustc": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/rustc-1.92.0-aarch64-unknown-linux-gnu.tar.xz",
+      "hash": "7c8706fad4c038b5eacab0092e15db54d2b365d5f3323ca046fe987f814e7826"
+    },
+    "cargo": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/cargo-1.92.0-aarch64-unknown-linux-gnu.tar.xz",
+      "hash": "cb2ce6be6411b986e25c71ad8a813f9dfbe3461738136fd684e3644f8dd75df4"
+    },
+    "rust-std": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/rust-std-1.92.0-aarch64-unknown-linux-gnu.tar.xz",
+      "hash": "ce2ab42c09d633b0a8b4b65a297c700ae0fad47aae890f75894782f95be7e36d"
+    }
+  },
+  "x86_64-unknown-linux-gnu": {
+    "rustc": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/rustc-1.92.0-x86_64-unknown-linux-gnu.tar.xz",
+      "hash": "78b2dd9c6b1fcd2621fa81c611cf5e2d6950690775038b585c64f364422886e0"
+    },
+    "cargo": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/cargo-1.92.0-x86_64-unknown-linux-gnu.tar.xz",
+      "hash": "e5e12be2c7126a7036c8adf573078a28b92611f5767cc9bd0a6f7c83081df103"
+    },
+    "rust-std": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/rust-std-1.92.0-x86_64-unknown-linux-gnu.tar.xz",
+      "hash": "5f106805ed86ebf8df287039e53a45cf974391ef4d088c2760776b05b8e48b5d"
+    }
+  },
+  "aarch64-unknown-linux-musl": {
+    "rust-std": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/rust-std-1.92.0-aarch64-unknown-linux-musl.tar.xz",
+      "hash": "94b9f84f21d29825c55a27fbb6b4b9fb9296a4a841aa54d85b95c42445623363"
+    }
+  },
+  "armv7-unknown-linux-musleabihf": {
+    "rust-std": {
+      "url": "https://static.rust-lang.org/dist/2025-12-11/rust-std-1.92.0-armv7-unknown-linux-musleabihf.tar.xz",
+      "hash": "c7c08a389bd351226fd52266bfe2d2c444597e1bbb5d0307da44bdfa4df62c99"
+    }
+  }
+}

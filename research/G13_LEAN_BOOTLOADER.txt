@@ -1,0 +1,567 @@
+G13 V013: Lean bootloader and independent loading work
+2026-11-01 UTC
+
+Default-boot addendum: boot_a now enters the shared functional preparation
+core automatically through a compiled-Lean gate, with a persistent third-start
+stock-input escape. MBOOT is unchanged. The gate uses its own bounded Lean
+FCIE/DMA journal driver; it makes no runtime MBOOT calls. See
+G13_LEANBOOT_DEFAULT.txt for current installation and verification status,
+hashes, exact policy, remaining MBOOT dependencies and recovery instructions.
+This verifies the shared core on hardware through the gate. It does not claim
+a hardware test of the standalone refactored g13-os.bin entry described below.
+
+Ethernet addendum: the separate compiled-Lean RAM Ethernet payload has now
+passed real ARP, ICMP and UDP echo tests at 192.168.77.3, including 1500-byte IP
+packets. See G13_LEANBOOT_ETHERNET.txt. It does not install an update writer or
+change the existing OS payload. MBOOT was observed to enter with interrupts
+enabled; Ethernet explicitly saves/masks/restores them. The OS entry described
+below still requires caller-supplied masking and remains offline-verified as
+a standalone entry.
+
+Functional core and monadic effects (initial refactor record)
+-----------------------------------------------------------
+The bootloader is now separated into pure planning, capability-based memory
+preparation, and the outer hardware driver. At this refactor checkpoint the
+revision had not been loaded onto the TV. The preceding hardware-tested source and image remain preserved
+in assets/research/g13-leanboot-os/secure-trial/; the refactor baseline is in
+assets/research/g13-leanboot-functional/baseline/. No TV state changed during
+this refactor.
+
+  Plan.lean: Request -> validated BootPlan; ordinary pure Lean values.
+  MemoryAccess.lean: distinct Reader and Writer capabilities.
+  Memory/Images/Fdt/Bootconfig/VerifiedBoot: generic checked memory algorithms.
+  Os.inspect: Reader-only inspection, followed by a pure plan callback.
+  Os.withPrepared: inspect, apply plan, call back with KernelConfig on success.
+  OsEntry/Cpu/Qemu: board progress, secure firmware and terminal handoff.
+  src/bootloader/Unsafe/: effect colors, private foreign declarations, RAM adapter.
+  tools/bootloader/Unsafe/: host-side ARM DSL generator.
+
+KernelConfig holds the kernel entry, FDT, initramfs address/length and secure
+message address. The success callback is invoked once, after preparation, and
+is specialized to direct code rather than allocated or stored. The actual
+kernel/FDT values are now carried through both stack transitions to the jump.
+No parser, copying loop, cache traversal or policy moved into assembly.
+
+Unsafe.MemoryM colors physical RAM. Unsafe.HardwareM colors MMIO, CPU, UART,
+secure calls and handoff. Every raw BaseIO extern is private; public operations
+return the appropriate monad. liftMemory is explicit and one-way. Runners
+discharge a color at reviewed outer adapters only. A Permission proposition
+keeps colors distinct while allowing the compiler to erase them. It is not a
+proof of ownership or a security boundary against deliberately bypassing code.
+The generic core cannot import these physical operations; the source audit
+enforces that separation. It also runs unchanged under pure ReaderT/StateM.
+
+Supported G13 entry: leanboot_os_start at image offset zero. Seven DSL
+instructions preserve the caller and select a private stack ending 26340000.
+Lean admission checks require ARM SVC, IRQ/FIQ masked, aligned/private SP and
+SCTLR 00c0181d. Failure returns 26 before UART or image access. Valid coherent
+code, mapped RAM, and an aligned caller stack with 8 writable bytes are still
+bootstrap prerequisites; these cannot be discovered safely after bad entry.
+The full-image tests measured 584 bytes of private-stack use. This is measured
+coverage, not a formal worst-case proof. The complete contract is in
+src/bootloader/Unsafe/CONTRACTS.txt.
+
+Validation occurs before destructive vendor ramdisk compaction. Invalid
+length/config/digest metadata is rejected before any output write. FDT editing
+may modify its private scratch before rejecting a malformed recipe; such a
+failure never reaches the success callback or hardware commit. Successful
+preparation still overwrites the staged vendor header, so raw inputs must be
+reloaded before retrying.
+
+Current artifact: 23236-byte g13-os.bin, SHA256:
+  2f486d9e306fca11c76844e6a4389f1d112aa96aa43f71d574f2477967229a2c
+There are 21 private FFI declarations and two entry stubs: 84 G13 authored ARM
+instructions plus 22 QEMU instructions. The increase adds the private-stack
+entry, CPSR/SP reads and register forwarding for the selected kernel/FDT.
+Builds pass with the ordinary Lean compiler limits; generic memory operations
+use specialization instead of expanding every monadic bind at each call site.
+The linked images have no allocator/runtime imports, writable globals or
+indirect calls. These are artifact audits, not formal compiler verification.
+
+Checks: pure model and independent FDT/initramfs oracle; Reader-only inspection;
+five invalid requests with no writes/callback; four rejected effect-color
+programs plus a valid explicit lift; six ARM entry/admission cases; exact G13
+preparation and secure success/failure paths; three early rejection paths;
+6668 image reads, 324 FDT/copy cases, nine CPU cases, 23 secure-packet cases,
+two secure-wrapper ABI cases, eight full probe executions, 12994 probe-core
+cases, and 14 LZ4 decoder cases. QEMU boots Linux/BusyBox and rejects a bad
+header using the new loader. QEMU does not test the G13 secure firmware/panel.
+Commands: tools/bootloader/README.txt. Reports: assets/build/leanboot/.
+Frozen source/tools/ELFs and test reports for this revision:
+  assets/research/g13-leanboot-functional/verified/
+
+Hardware-verified predecessor
+-----------------------------
+Ordinary Lean -> C -> ARM now owns Android v4 parsing, checked image placement,
+FDT validation/editing, initramfs assembly, bootconfig generation, cache geometry
+and maintenance loops, MIU polling, interrupt masking and Linux handoff. There
+are no MBOOT calls, allocator or handwritten C in the payload. All 19 FFI
+declarations are in Unsafe/Primitives.lean; individual ARM instructions use the
+vendored DSL in Unsafe/Arm.lean. G13 has 71 authored instructions across 17
+primitives, including returns/address setup. QEMU adds 21 in three entries.
+That hardware-tested kernel-capable image is 18992 bytes, SHA256:
+  33a5a5cd6ff230f72a3b7928f5afa8792ede6f52b76ac8e7af859d4e842c10e3
+The complete unsafe contracts, assumptions and audit rules are documented in
+src/bootloader/Unsafe/CONTRACTS.txt. Dynamic tests are not formal verification.
+
+G13 hardware result: preparation and native OS startup PASSED in the second
+RAM-only trial. UART reached READY at 19.91 s after Linux started. Ethernet
+ADB/root works at 192.168.77.3:5555; tvinit, SurfaceFlinger and audio are running,
+without zygote/system_server. Physical Home confirmation is pending.
+Last verified boot ID: 6becc9a6-d9db-4de7-972b-5afbf2897eeb.
+Both /proc/cmdline (leanboot=1) and ro.boot.leanboot=1 identify our handoff.
+The running FDT SHA matches the exact expected Lean output:
+  10870d51d522bcf129522382fb92ef33cf8e129696bb8a3716454457a34d99fc
+The full installed native configuration/runtime manifest passed verification.
+Host proxy/replay links were restored over Ethernet. No automatic jump is
+installed: this boot was entered manually from the existing MBOOT prompt.
+Readback of misc shows boot-poweron with empty recovery arguments. No catcher
+remains active; the temporary trial logcat process was stopped after capture.
+
+The mode-0 entry printed LEANBOOT OS prep / LEANBOOT prepared, returned zero,
+and preserved SCTLR 00c0181d. Resulting RAM CRCs exactly matched offline ARM:
+  kernel 20208000, 15871916 bytes: 3931B58D
+  initrd 24000000, 20391936 bytes: 38660560
+  FDT    23000000,    43956 bytes: BA46D374
+Those are transfer/correctness checks, not cryptographic authentication.
+
+First trial and recovery
+------------------------
+The preceding 16748-byte image (SHA256
+65f64d89dc7b358410850c9721e497c0372071153fb07d091bde876bffea4c16)
+retained stock panel_pre_init/panel_post_init and entered Linux. It reached EARLY at
+7.58 s and audio-shim preparation at 8.00 s. At 12.7765 s userspace requested
+"reboot: Restarting system with command 'recovery'" before the launcher or
+Ethernet ADB started. This proves the kernel/initramfs handoff, not a completed
+native OS boot. After the owner power-cycled, a bounded Screen catcher reached
+MBOOT. A read of misc identified boot-recovery with --prompt_and_wipe_data and
+--reason=init_user0_failed. This establishes the failure stage; no wipe was run.
+The first 4096 bytes were backed up. Only the command and recovery-argument
+fields were cleared; the first 1024 bytes were written and readback verified,
+with the A/B control data at offset 2048 preserved. See clear-recovery-request.json.
+Normal startup then reached READY at 18.77 s and restored ADB/root before the
+second experiment. Its boot ID was 49fa745a-48bf-4a81-8e0a-a3d55ef9cae0.
+
+Secure message fix and second trial
+-----------------------------------
+Exact avb_verify_boot_start calls 274c7cf8, which on its unlocked/orange path
+calls 274c784c to serialize "mboot" / "verified-boot" and invokes SMC b200585e
+through 2742ebb4. These are linked-image addresses, not live call targets.
+VerifiedBoot.lean now builds the same 132 bytes independently: OS version
+1c000196, empty public key, orange state 2, unlocked flag 0, and the real ASCII
+vbmeta digest from the captured bootconfig. The output lives at 26320000.
+Packet SHA256:
+  8b262f8df4653eafe3f0d7ed87391acc732cdbb4df1896c3c75708bf19dbc1f1
+The 3136-byte control/profile has SHA256:
+  2346b69b1263939e9a01de6183437302aada6578400091782b659017cb18fd20
+
+The serializer validates bounds and digest encoding before any write. A
+six-instruction FFI wrapper sends only this fixed service; it preserves the
+callee-saved registers and returns the result to Lean. Lean flushes the
+message first and refuses Linux entry on a nonzero result. The TV's mode-0
+packet readback matched byte-for-byte. Mode 1 printed LEANBOOT secure 00000000,
+then Linux reached NETWORK at 13.10 s, DISPLAY at 19.70 s and READY at 19.91 s.
+Adding this initialization resolved init_user0 failure in the observed trial;
+it is not a formal proof of the secure firmware or general boot reliability.
+
+No assistant flash/unlock/slot-change command was issued. Initial MBOOT phase 1
+saved its normal environment; the retained stock panel command also logged two
+single-block writes. Linux itself requested recovery. Do not describe the entire
+experiment as free of persistent writes. The first failure's BCB request was
+explicitly cleared as described above. After the successful second trial,
+full partition hashes still matched the preceding normal boot:
+  init_boot_a 0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b
+  MBOOT       a342fcdd62b2ce7121d977b9410d2c05aa51757bf7d26d6b445423e97122439b
+  MBOOT_b and MBOOTBAK:
+              643058879b84d044dea58a4572bd9ade1cc3140f3d3357eeaabae53be32ec382
+
+Evidence: assets/research/g13-leanboot-os/, including terminal-start.json,
+terminal-uart.bin, transactions.jsonl, expected-preparation.json, tested-build/
+and compressed-transfer.json. Source/ELF/input snapshots retain the exact
+preparation and terminal binary. secure-trial/ holds the successful trial's
+source/ELF/control snapshots, terminal logs, packet readback, running-state,
+FDT, bootconfig, manifest and verification.json. The old probe evidence below
+is separate.
+
+RAM map and remaining dependencies
+----------------------------------
+  20207000: raw boot_a (kernel naturally begins at 20208000)
+  23000000: constructed FDT, capacity 64 KiB
+  24000000: raw vendor_boot, then assembled initramfs (capacity 20 MiB)
+  25400000: current native init_boot_a, 8 MiB
+  26000000: our OS loader, below MBOOT heap/stack
+  26100000: compressed UART upload scratch, 64 KiB
+  26200000: bounded control header + board-fixup recipe + bootconfig
+  26300000..26310000: private terminal stack
+  26320000: 132-byte verified-boot message to existing secure firmware
+  26330000..26340000: private preparation stack (new source; offline verified)
+Do not reuse the earlier probe's 25000000 address: it overlaps the initramfs.
+Mode 0 compacts vendor data over its header. Reload raw inputs before repeating
+preparation or entering mode 1; it is deliberately not an in-place retry API.
+
+The host profile pins exact backup/current-init hashes, uses the original DTB
+from vendor_boot, and derives 21 property fixes from a captured working DTB.
+All 1252 final properties and node paths are checked against that oracle.
+This preserves known board settings; it does not rediscover them independently.
+The TV's exact raw ARM/Thumb2 Image forces FDT address 23000000 in its head.
+Our trailer appends androidboot.leanboot="1" and bootargs append leanboot=1.
+
+Still retained: BootROM, DRAM training, secure firmware, early MBOOT phase 1,
+panel initialization, raw partition reads and RAM upload/bootstrap cache sync.
+The payload replaces readKL/bootKL/bootm, FDT construction and terminal CPU
+work. MBOOT's extra MIU kernel-protection policy is not implemented; no claim
+of equivalent security or whole-board initialization is made. No automatic
+jump is installed. Independent FCIE storage and earlier takeover remain work.
+
+Compressed serial transfers
+----------------------------
+The owner requested compression for substantial serial transfers. Exact MBOOT
+supports lz4 -d <src_addr> <src_len> <dest_addr> <dest_len>, all hexadecimal.
+It expects a raw LZ4 block, not the framed .lz4 file format or a size prefix.
+There is no unzip command. Host upload now compresses inputs >=1024 bytes when
+that saves at least 64 bytes, checks a local round trip, uploads to 26100000,
+checks compressed CRC, invokes lz4 and checks the exact decompressed CRC.
+Source padding accommodates the stock decoder's word reads. Its source length
+is an output/consumed count rather than an enforced input bound, so only trusted
+host-generated and CRC-verified blocks may be passed to it.
+
+check-transfer.py ran 14 inputs through the exact saved ARM decoder, including
+full loader/control data, 64 KiB repeated and incompressible inputs, checking
+read/write bounds. Current TV uploads passed: loader 18992 -> 12651 bytes,
+control 3136 -> 1927 bytes, plus 16 zero bytes after each compressed block.
+Compression is a MBOOT bootstrap transport; no stock decoder is called by Lean.
+
+Word-by-word transfer still cost 79.87 s despite compression. Bulk upload now
+uses loady and lrzsz sb, routed through the existing Screen session's exec !!
+filter. Neither helper opens another serial reader. Starting the sender before
+loady avoids losing the initial handshake; waiting for the final MBOOT prompt
+plus its receiver drain avoids losing the next command's tail. The wrapper
+has a 45-second bound and restores the original terminal settings. Transfers
+below 1024 bytes retain word commands; incompressible bulk data uses YMODEM.
+One complete loader/control transfer took 12.22 s including decompression and
+CRCs, about 6.5 times faster than the compressed word-command transfer. The
+record is secure-trial/ymodem-transfer.json; individual sender/CRC results are
+in ymodem-*/. check-serial.py passed a 78187-byte round trip over two connected
+PTYs including every byte value, checking restored terminal settings. That
+test never accesses the TV. Prefer Ethernet ADB once Linux is up.
+
+Virtual environment and tests
+-----------------------------
+  nix develop .#bootloader -c python3 tools/bootloader/qemu.py
+  nix develop .#bootloader -c python3 tools/bootloader/qemu.py --check
+Interactive command reaches BusyBox; poweroff -f exits. --no-build reuses the
+last build. No TV/private assets are required; first use downloads about 31 MiB
+of hash-pinned Debian ARM inputs. Details/commands: tools/bootloader/README.txt.
+QEMU virt executes the same Lean image/FDT/initramfs preparation and cache loop,
+then Linux 6.12.107+deb13-armmp and /init. Boot/marker/poweroff and malformed
+header rejection passed; interactive shell was separately exercised. Debian's
+kernel disables CONFIG_BOOT_CONFIG, so ARM byte comparisons cover the trailer,
+but this guest does not test kernel bootconfig parsing. QEMU is not a MediaTek
+panel/audio/FCIE/MIU/secure-world model and cannot establish physical coherency.
+
+Current offline checks: 6668 image-reader cases; 324 FDT/memmove cases; full
+G13 preparation compared byte-for-byte for kernel/initrd and all DT properties;
+9 cache-geometry/MIU/transition cases; 8 UART probe executions; 14 exact-MBOOT
+LZ4 cases; 23 verified-boot packet cases against execution of the exact MBOOT
+serializer; two SMC-wrapper ABI cases; full OS-entry preparation, successful
+secure-call handoff and rejected secure-call paths. Source/ELF audit rejects
+unexpected FFI/instructions/external calls,
+writable globals and allocator/runtime imports. Reports live in assets/build/
+leanboot/. The earlier 12994 policy checks below cover the unchanged probe core.
+
+Historical parser-only revision (superseded)
+-------------------------------------------
+The following records the earlier parser/probe milestones, not current limits.
+The current source moves the complete UART loop into ordinary Lean BaseIO,
+compiled through C to ARM. Even the entry point is compiled Lean: there is
+no authored assembly entry stub. Unsafe/Arm.lean contains just three raw
+primitives (12 ARM instructions including returns and address setup).
+Unsafe/Primitives.lean is the only runtime FFI declaration module. Their
+preconditions, effects and review rules are in Unsafe/CONTRACTS.txt.
+
+New ordinary Lean code independently reads Android v4 boot/init_boot and
+the exact G13 vendor_boot profile, and locates the DTB inside its Android
+DT table. Bounds and address-wrap checks precede raw loads. Parsing has no
+MBOOT calls, allocation, libc or Lean runtime dependency. It is structural
+validation, not image authentication, full device-tree validation or an OS
+loader. The supplied RAM must belong to the caller and remain stable.
+
+This revision was tested OFFLINE, not uploaded or executed on the TV.
+The 312-byte UART probe has SHA256
+  9150727c33e3db3a7a391145b2635d717d2a3824211bd09fd6691a4e10916bac
+The parser-containing core is a separate emulator artifact, not a deployed
+loader. build.json and the per-artifact test reports record its exact hash.
+No reboot, UART command or TV write was made during this revision.
+
+Earlier hardware result (different binary)
+------------------------------------------
+The TV executed a 288-byte program whose policy is written in Lean and
+whose entry/MMIO adapter is written in the existing ZrAsm ARM DSL. It
+printed LEANBOOT RAM on UART, returned zero to MBOOT, and left SCTLR
+unchanged. This establishes a working, returnable RAM entry before Linux.
+It is the first bootloader probe, not yet an OS loader or automatic boot
+replacement. Installed bootloader code and the init_boot image were not
+changed. The original 288 bytes in the temporary RAM buffer were restored
+and readback verified before requesting a normal MBOOT reset.
+
+After reset the native launcher reached DANDE_BOOT READY at +18.73 seconds.
+Authenticated Ethernet ADB/root, the full native configuration/runtime
+manifest and native entry selection passed. init_boot_a, active MBOOT,
+MBOOT_b and MBOOTBAK hashes match the pre-test values; host proxy/replay
+links were restored. The new boot ID is
+f912ea2b-a5ea-4cc7-aef4-a4dfff04caae. This is software readiness verification;
+the owner was away, so no new physical-screen confirmation was requested.
+See hardware-check.json, after.txt and normal-return-uart.bin in the
+experiment's evidence directory for the completed return checks.
+
+The owner chose RAM-only work first, then requested a Lean bootloader with
+the existing ARM DSL and explicitly allowed vendoring from ~/dande-router.
+That repository's clean commit 92afd549dd5404eab68b7d9e8b12cc1d1bc9d27e is
+the source of the three unmodified ZrAsm modules. See the provenance in
+tools/bootloader/vendor/UPSTREAM.txt. No Zynq-specific initialization or
+router runtime was copied. Both repositories use Lean 4.35.0.
+
+Source and build
+----------------
+  src/bootloader/Probe.lean       marker, poll budget, drain and return policy
+  src/bootloader/Main.lean        ordinary Lean HardwareM polling and entry
+  src/bootloader/Memory.lean      checked ranges and endian decoding
+  src/bootloader/Images.lean      boot/vendor/DT-table structural readers
+  src/bootloader/Unsafe/          runtime FFI/effect types and their contracts
+  src/bootloader/ram.ld           position-independent RAM image layout
+  tools/bootloader/vendor/ZrAsm/  instruction AST, printer and DSL
+  tools/bootloader/Unsafe/Arm.lean  host-side ARM generator for the FFI boundary
+  tools/bootloader/Harness.lean   offline-test exports, excluded from OS payloads
+  tools/bootloader/build.py       Lean -> generated C + DSL -> ARM binary
+  tools/bootloader/check.py       isolated policy machine-code checks
+  tools/bootloader/check-payload.py  full relocated payload with UART model
+  tools/bootloader/check-images.py  actual ARM parsers with guarded memory
+  tools/bootloader/audit.py       source/FFI/instruction boundary audit
+  tools/bootloader/check-mboot.py exact stock go-handler ABI check
+
+Run from the repository root:
+  nix develop .#bootloader -c python3 tools/bootloader/check.py
+  nix develop .#bootloader -c python3 tools/bootloader/check-payload.py
+  nix develop .#bootloader -c python3 tools/bootloader/check-images.py
+  nix develop .#bootloader -c python3 tools/bootloader/check-mboot.py
+
+check.py also rebuilds the payload. build.py builds and audits it. All
+outputs are under assets/build/leanboot/. The firmware-handler check needs
+this unit's saved stock MBOOT.img and refuses a different SHA256. These
+commands do not access a TV. The normal G06/G13 app builds are unchanged;
+only an additional, explicitly selected Nix development shell was added.
+
+The Lean C backend is a compiler step: there is no hand-written C or Rust
+in this payload. Only scalar generated functions survive section GC.
+There is no libc, Lean runtime, allocator, initialized global, BSS or GOT.
+The linker rejects writable sections. Assembly is generated from ZrAsm;
+there is no separately maintained .S implementation. The resulting image
+uses relative internal references and has no runtime relocations.
+
+Earlier hardware-tested binary SHA256 (retained under
+assets/research/g13-leanboot/baseline/build/ with its source alongside):
+  773f308d80332b5d7d84eadf59dabc4a0a230cd0b86061f0fa2ccad6c0857934
+Length: 288 bytes; CRC32: 57ce03d5.
+ELF SHA256:
+  57dd58dc6ed7e237a11606dfef3ddb83d6ccb0fa8df48e9218fd70be1f980d79
+Build manifests are build records; hardware evidence is separate and must
+match the binary hash. A new build is not automatically a new hardware test.
+
+Entry contract
+--------------
+MBOOT's ARM-mode go calls entry(argc-1, argv+1). The probe currently ignores
+the arguments. It borrows an 8-byte-aligned caller stack, preserves r4-r11
+and SP, and returns through LR. The current compiled-Lean probe uses 8 bytes
+of stack in the emulator; the earlier hardware probe used 16. It leaves
+CPU mode, interrupt masks, MMU and cache controls alone.
+It relies on stock DRAM, clocks and UART configuration already being ready.
+
+Only the Unsafe primitives touch hardware: a word read at UART status 0x1f201328
+and a byte store at TX data 0x1f201300. The address/widths are grounded in
+this unit's boot0 routine at file 0xe304; the live MMU map and successful
+hardware output establish them at the tested MBOOT handoff as well.
+Main.lean converts status bits 5/6 into the Lean core's ready/idle flags.
+Lean requests the exact 14 bytes "LEANBOOT RAM\r\n", waits for the
+transmitter to empty, then requests return 0. Stalled ready/drain polling
+returns 1 after 1,048,577 unsuccessful reads in that phase. Corrupt core
+state requests return 2. This bounds loop iterations, not wall time if an
+MMIO access itself hangs. No receive, DMA, flash, environment, slot or fuse
+operation exists in the payload.
+
+Validation
+----------
+The actual ARM32 policy function passed 12,994 executions including every
+byte index, timeout boundaries, corrupt states, ignored status bits and
+32 delayed whole-message traces. Return ABI and write bounds were checked.
+
+The current complete 312 bytes passed eight executions with modeled UART registers:
+ready/delayed output at three unrelated addresses, stuck transmitter and
+stuck final drain. All paths returned as expected, preserved saved registers
+and CPU control state, and wrote only the caller stack and UART data byte.
+The relocation tests execute the same bytes without patching them. This
+models neither the TV's cache coherence nor its physical peripherals.
+
+The independent readers passed 6,668 ARM executions, including exact private
+backup fixtures, every fixed-header truncation, section boundaries, 1,200
+mutations, unsupported versions/profiles, overflowing sizes and addresses,
+unaligned data and relocated code. Reads were confined to input/code/stack;
+writes were confined to the stack, maximum 96 bytes. Error paths returned
+without dereferencing wrapped addresses. These are dynamic tests, not proofs.
+The FDT body is not parsed or modified yet. check-images.py records image
+hashes and section offsets in assets/build/leanboot/image-check.json.
+
+The build audit checks the exact primitive instructions, FFI declarations,
+absence of authored assembly outside Unsafe, linked entry at zero, no
+unresolved runtime imports or writable sections, and no external call target.
+Updating a raw primitive requires updating this explicit review gate.
+
+The exact stock go handler also passed an independent machine-code test:
+it forwards argc/argv and returns to its caller after application results
+0 and 0x55 (command status 0 and 1 respectively). printf, number parsing
+and that test's application are stubbed. Addresses in that test use the
+linked-image layout, not a guessed live relocation.
+
+Live RAM experiment
+-------------------
+Earlier evidence: assets/research/g13-leanboot/; the corresponding build
+and source were preserved in its baseline/ directory before refactoring.
+The existing Screen 96550/window 0 stayed the sole UART owner on ttyUSB1.
+The bounded catcher sent two CRs during one ordinary Android reboot and
+stopped at the MBOOT prompt. No competing UART reader was opened.
+
+Live bdinfo reported:
+  DRAM range represented by MBOOT: 0x20000000 + 0x09800000
+  relocation address/offset:      0x28d00000 / 0x01900000
+  initial stack / IRQ stack:      0x284ddf60 / 0x284dff70
+  translation table:             0x297f0000
+  boot parameters:               0x20400100
+This 152 MiB bootloader view is not the TV's total physical RAM size.
+
+The selected temporary buffer, 0x25000000..0x2500011f, lies in the stock
+bootcmd's kernel-load buffer, below the live stack/heap and relocated MBOOT.
+The live descriptor at 0x297f0940 was 0x25000c0e; the UART descriptor at
+0x297f07c8 was 0x1f200c02. These establish identity mapping at this entry.
+SCTLR readback via the verified stock two-instruction helper was 0x00c0181d:
+MMU, data cache and instruction cache are enabled. Therefore RAM readback
+alone was not treated as instruction-cache coherence.
+
+The exact helpers used after applying the live relocation offset were:
+  0x28db0a20  MRC SCTLR; BX LR (read-only state observation)
+  0x28daf330  stock cache clean/invalidate-all wrapper
+  0x28daf318  stock DSB; ISB; MOV PC,LR tail
+Readback matched the SCTLR helper. The cache helper, its loop and both
+literal words matched stock CRC32 c92369af over 0x168 bytes at 0x28daf290.
+The initial shorter check covered 0x164 bytes (CRC 7a35b63c); the complete
+range was checked again before executing our program and during restore.
+The barrier tail leaves its input r0 alone, hence go prints return 1 there;
+that is expected and does not denote a failed barrier.
+
+The original 288 RAM bytes were saved in ram-before.bin. Seventy-two mw.l
+stores loaded the payload. Full md.l readback and CRC32 matched the build;
+the verified stock cache helpers then made the data/instruction views
+coherent. The actual result, retained in probe-result.txt, was:
+
+  go 25000000
+  ## Starting application at 0x25000000 ...
+  LEANBOOT RAM
+  ## Application terminated, rc = 0x0
+  << MT5867 >>#
+
+SCTLR still read 0x00c0181d. The original RAM bytes were then restored,
+readback/CRC verified and cache synchronized. The session-specific script
+and complete command/reply journal are probe-session.py/transaction.jsonl
+under the evidence directory. Its addresses and Screen session are tied
+to this captured state: it is not an unconditional future command recipe.
+Re-establish relocation, buffer ownership and helper bytes on another boot.
+
+No assistant command wrote a TV partition or saved an environment. The
+stock MBOOT phase-1 initialization itself logged a model.info cleanup and
+environment save before the prompt; normal firmware behavior must not be
+misreported as an entirely write-free reboot. The payload only touched RAM
+and UART. Read RECOVERY_NOTES.txt and G13_DEVELOPMENT.txt before further
+device work, including the limits of UART/Fastboot recovery.
+
+Getting control earlier
+-----------------------
+The demonstrated order is:
+  BootROM -> stock DRAM/secure loaders -> stock MBOOT initialization
+  -> MstarProcess phase 1 -> interrupted autoboot -> our Lean RAM probe
+  -> return to MBOOT -> normal reset -> existing native Linux startup.
+
+This skips neither stock DRAM training nor the secure loaders and does not
+install an automatic jump. It establishes the architecture, ABI and safe
+return boundary before attempting earlier takeover. The MBOOT log already
+places its banner around 448 ms and driver-init marker around 504 ms on
+its own clock. The manually paused/uploaded probe is not a power-on speed
+measurement, and those markers are not wall-clock boot-to-home timings.
+
+Exact main_loop analysis matters for the next change: MstarProcess runs at
+linked 0x274c9604 before the abort check, and MstarToKernel at 0x274c96ec
+before the eventual bootcmd execution at 0x274c9748. Simply replacing
+bootcmd is therefore not demonstrated to bypass the vendor's phase-2
+kernel path. No generic U-Boot preboot recipe has been applied.
+
+Next work: own the image intake, RAM layout, boot-data construction and Linux
+handoff in Lean, rather than delegating readKL/bootKL to MBOOT. Move the
+handoff earlier only after tracing the initialization we actually need.
+Earlier persistent
+injection or replacing authenticated MBOOT executable code is a separate
+step: logo-asset modification did not establish code-signature acceptance,
+and independent BootROM recovery/spare-copy fallback remain unverified.
+
+Independent loading findings and remaining work
+-----------------------------------------------
+The latest owner direction is to reverse engineer and replace vendor loader
+logic wherever feasible, keeping the few irreducible unsafe operations in
+one auditable boundary. Ordinary Lean BaseIO lowers to scalar C functions
+with this compiler; there is no reason to put loops, parsers or device
+protocol sequencing in the ARM DSL. No router runtime was needed.
+
+Exact stock fixtures independently decoded by the Lean ARM code:
+  boot_a:        kernel at 4096, length 15871916; generic ramdisk absent
+  init_boot_a:   generic ramdisk at 4096, length 2032630
+  vendor_boot_a: vendor ramdisk at 4096, length 18128651
+                 DT container at 18132992, length 42446
+                 fragment table at 18176000, length 108
+                 bootconfig at 18178048, length 63
+  DT container:  one 32-byte Android DT-table entry after a 32-byte header;
+                 actual FDT at container+64, length 42382
+The table uses magic d7b7ab1e and big-endian fields, not a legacy uImage
+header. The parser verifies the container rather than blindly skipping 64.
+Only the observed single platform fragment with wildcard board IDs and
+single wildcard DTB are supported. Other selection rules remain unimplemented.
+
+Header load addresses are not a ready-to-use RAM plan. In exact readKL_dtb,
+linked 0x2745241c sets ramdisk base 0x24000000; 0x274524f8..0x27452518 copies
+the vendor fragment and increments its length; 0x27452660..0x2745267c appends
+the generic ramdisk there. For these stock sizes the combined ramdisk ends
+at 0x2533a301, overlapping the first probe's 0x25000000 address. The active
+modified init_boot has a different ramdisk size and must be measured too.
+No kernel-capable payload should inherit the tiny probe's address blindly.
+See assets/research/g13-startup-trace-20261101/mboot-ramdisk.txt.
+
+The exact command table resolves bootKL to linked 0x27456d6c. It selects an
+image/auth address (v4 path through 0x2742bf7c), invokes 0x27452ae8, formats
+"bootm 0x%x", then dispatches the string at 0x27456ea0. Replacing bootKL
+therefore requires tracing the remaining bootm/FDT/CPU work, not just its
+small command wrapper. Fresh disassembly is saved in
+assets/research/g13-leanboot/bootkl-disassembly.txt; regenerate with:
+  nix develop .#bootloader -c python3 research/recovery-probe/inspect-g13-startup.py mboot 0x5916c 0x680
+These are linked addresses, not live jump targets.
+
+Next components are an independent read-only image transport (own UART
+receive protocol or a traced FCIE/eMMC reader), checked placement outside
+loader/stack/reserved regions, full FDT validation/editing and bootconfig
+assembly preserving this TV's native startup settings. Trace and replace
+CPU/cache/DMA preparation before adding the final Linux transfer. Cache
+iteration belongs in Lean; only the individual CP15/barrier operations
+belong in Unsafe. No such operation or jump has been added speculatively.
+
+The installed early ROM/DRAM/secure loaders and the initial RAM-upload
+mechanism remain dependencies. The earlier test used MBOOT upload commands
+and cache helpers; this refactor does not make that bootstrap independent.
+It does remove MBOOT services from all implemented payload logic.
+
+Format references, cross-checked against exact local bytes:
+https://android.googlesource.com/platform/system/tools/mkbootimg/+/808d42e197506319ee65eb078d3defd9602e2ac2/include/bootimg/bootimg.h
+https://android.googlesource.com/platform/system/libufdt/+/cb30f6426d4486d55e14ec952c374d7f06002df1/utils/src/dt_table.h

@@ -1,0 +1,37 @@
+Lean runtime hardware check, 2026-11-01
+=====================================
+Source snapshot: local d4hines/lean-youtube commit 8405dda.
+All archived lean/zr source files matched that commit byte-for-byte. The
+active Lean worktree advanced during the test and was not modified.
+
+Built the existing conformance-arm32 program in an isolated assets directory.
+Its QEMU transcript and expected-panic output matched the upstream references.
+The exact same binary was uploaded to the original G06 and run as a bounded
+child process, not PID1. Its reviewed driver only requests reboot when PID1;
+that branch was not taken. No launcher, display, audio or boot changes were made.
+
+TV exit status: 0
+stdout: 97975 bytes, SHA256
+cf79db34ec9bd1c3414b49fc7e27ab7a89fbd0b0336ede91acc1b0a7318971e8
+stderr (intentional panic-test messages): 138 bytes, SHA256
+0bb763e81a84d163905940343cca682f5047b90daf38cb9de0b7813c4cc45878
+Both streams exactly matched their upstream Lean reference files.
+Binary: 158812 bytes, SHA256
+b2a2b6ed7aab0ad932bda11732f2020c95484f8ce5a490a26b8abe2433b980b9
+Kernel boot ID remained 4e1dae0a-708e-4fbf-927d-f51da3bf8b9d.
+
+Evidence: assets/build/lean-runtime-hardware/{tv-result.json,live-execution.txt,
+tv-transcript.txt,tv-panics.txt,build-check.log}; source and generated inputs
+are retained under the same ignored directory.
+
+Scope: this is runtime conformance for the existing test suite on physical
+ARM32 Linux. It is not proof of all Lean semantics, unbounded Nat support,
+thread safety, app integration, confinement or a complete Lean PID1.
+The runtime is single-threaded and native worker threads must not access Lean
+objects. Its documented big-natural-number limit must remain explicit.
+
+Immediate integration direction: run the separate branch's small Lean app
+through tv_app_v1; add pollable waiting and bounded/nonblocking audio behavior
+before a single-threaded player event loop. Coordinate API changes with the
+Lean YouTube owner. Network brokering follows the issue-12 launch-bound
+capability design. Keep the known-working media backend and launcher available.

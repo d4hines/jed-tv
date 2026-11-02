@@ -1,0 +1,15 @@
+[build]
+# Outputs live under the git-ignored assets/ tree. build.py passes its own
+# --target-dir per flavour (musl baseline vs nolibc) so they don't thrash.
+target-dir = "../../../assets/build/nolibc/target"
+
+# Same linker setup as src/.cargo/config.toml. build.py adds, for the nolibc
+# flavour only: -C link-self-contained=no -L native=<sysroot>, so `-lc` and
+# `-lunwind` (requested by std) resolve to our Rust archives instead of the
+# musl ones shipped in rustlib/<target>/lib/self-contained.
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"
+
+[target.armv7-unknown-linux-musleabihf]
+linker = "rust-lld"
+rustflags = ["-C", "target-cpu=cortex-a55"]

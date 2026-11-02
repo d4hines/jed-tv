@@ -1,0 +1,100 @@
+Rust audio bridge: native API findings (offline, 2026-11-01)
+===========================================================
+No TV connection, playback, service mutation, or reboot was performed by this
+research agent. Root owns all hardware experiments.
+
+Recommendation
+--------------
+Use the C-exported AAudio API from the exact /system/lib/libaaudio.so. Force
+legacy/shared output to retain the existing AudioFlinger path. This avoids
+constructing C++ AudioTrack objects or depending on private object layouts.
+
+The exact V109 library exports all required entry points below. It is a thin
+10,872-byte wrapper and DT_NEEDED includes libaaudio_internal.so, libaudioclient.so,
+libaudioutils.so, libmedia_helper.so, libmediametrics.so, libmediautils.so,
+liblog.so, libcutils.so, libutils.so, libbinder.so, libc++.so, libc.so, libm.so
+and libdl.so. Merely linking the wrapper does not eliminate those libraries.
+
+Sequence and ABI
+----------------
+Opaque builder and stream pointers; result/state/enum values are int32_t.
+
+- AAudio_setMMapPolicy(int32_t policy) -> int32_t: use NEVER=1; check zero.
+- AAudio_createStreamBuilder(builder **) -> int32_t.
+- void builder setters (builder *, int32_t): setDirection(OUTPUT=0),
+  setSharingMode(SHARED=1), setPerformanceMode(NONE=10), setFormat(PCM_I16=1),
+  setSampleRate(rate), setChannelCount(1 or 2), setUsage(MEDIA=1),
+  setContentType(MUSIC=2), optionally setBufferCapacityInFrames(frames).
+- AAudioStreamBuilder_openStream(builder *, stream **) -> int32_t.
+- AAudioStreamBuilder_delete(builder *) -> int32_t; always delete builder.
+- Query actual sample rate, channel count and format after open; reject a
+  mismatch unless implementing conversion. These getters return int32_t.
+- AAudioStream_requestStart(stream *) -> int32_t; asynchronous start.
+- AAudioStream_write(stream *, const void *, int32_t frames, int64_t timeout_ns)
+  -> int32_t frames written, or negative error. Count is frames, not samples.
+- AAudioStream_getFramesWritten(stream *) -> int64_t.
+- AAudioStream_getFramesRead(stream *) -> int64_t.
+- AAudioStream_getState(stream *) -> int32_t.
+- AAudioStream_close(stream *) -> int32_t. Serialize lifecycle/write access.
+- Optional AAudioStream_getXRunCount returns int32_t;
+  AAudioStream_isMMapUsed returns bool and should be false in this design.
+
+Exact C exports AAudio_setMMapPolicy and getMMapPolicy are present despite
+being less prominent than the public builder API. Android11 AudioStreamBuilder
+also forbids MMAP unless performance LOW_LATENCY is requested. NONE plus
+NEVER therefore deliberately selects legacy AudioTrack.
+
+Counter and blocking semantics
+------------------------------
+Exact V109 AudioStreamTrack::getFramesRead at 0x18574 calls
+AudioTrack::getPosition at instruction 0x1859a, then extends the 32-bit value
+into its int64_t frame counter. Use max(0, written - read) for queued frames.
+This preserves the meaning of the existing Java getPlaybackHeadPosition path;
+it does not prove the exact acoustic speaker time. Fresh streams are simplest
+for reset and counter baselines. Stop/flush adjust internal counters, so do
+not assume those operations reset counts to zero.
+
+Important: Android11 legacy write does NOT implement the requested finite
+positive timeout. In AudioStreamTrack.cpp it treats timeout_ns > 0 only as
+AudioTrack's blocking boolean. A timeout of zero performs a nonblocking write;
+WOULD_BLOCK becomes zero frames. A bounded retry loop around timeout=0 gives
+our bridge control over cancellation/deadlines. Handle short positive writes.
+
+Missing Android framework
+-------------------------
+PlayerBase constructor uses defaultServiceManager()->checkService("audio"),
+not blocking getService. Missing service logs an error and leaves its manager
+pointer null. PlayerBase::init then skips tracking; events/release are guarded.
+The exact V109 constructor at 0x5eebc has the expected service-vtable call and
+null branch. AAudio MyPlayerBase calls this path. Unlike Java PlayerBase, this
+native path should not require our dynamic IAudioService proxy simply because
+system_server is absent. This is a source/firmware inference, not a hardware
+success claim. Existing AudioFlinger, policy, vendor HAL and service registries
+still need to remain running for this milestone.
+
+Preserve quiet volume
+---------------------
+Use the existing software gain/boost protocol. Do not rely on AAudio defaults
+for physical loudness. Exact libaudioclient exports these int-only static APIs
+if native policy setup needs the same Java setup operations:
+  _ZN7android11AudioSystem16initStreamVolumeE19audio_stream_type_tii
+  _ZN7android11AudioSystem20setStreamVolumeIndexE19audio_stream_type_tij
+Both return status_t and take three int-sized parameters. Root already found
+these. No float ABI dependence is needed for these calls.
+
+Evidence
+--------
+Offline exact-library copies and Android11 source snapshots:
+  assets/research/rust-audio-api/{libaaudio.so,libaudioclient.so,AAudio.h,
+    AAudioAudio.cpp,AudioStreamBuilder.cpp,AudioStreamTrack.cpp,
+    AudioStream.cpp,AudioStreamLegacy.cpp,PlayerBase.cpp}
+Root's exact live libaaudio_internal is at:
+  assets/research/rust-audio/libaaudio_internal.so
+Use llvm-objdump --triple=thumbv7-linux-android for these Thumb functions;
+plain ARM decoding produces misleading instructions.
+
+Primary upstream sources (android11-release):
+https://android.googlesource.com/platform/frameworks/av/+/refs/heads/android11-release/media/libaaudio/include/aaudio/AAudio.h
+https://android.googlesource.com/platform/frameworks/av/+/refs/heads/android11-release/media/libaaudio/src/core/AudioStreamBuilder.cpp
+https://android.googlesource.com/platform/frameworks/av/+/refs/heads/android11-release/media/libaaudio/src/legacy/AudioStreamTrack.cpp
+https://android.googlesource.com/platform/frameworks/av/+/refs/heads/android11-release/media/libaudioclient/PlayerBase.cpp

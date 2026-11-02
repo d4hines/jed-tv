@@ -1,0 +1,18 @@
+[package]
+name = "mi-bootstrap-probes"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+mi-bootstrap = { path = "../../../src/pid1/mi-bootstrap" }
+
+[[bin]]
+name = "speaker-owner-probe"
+path = "speaker-owner-probe.rs"
+
+[[bin]]
+name = "all-output-owner-probe"
+path = "all-output-owner-probe.rs"
+
+[workspace]

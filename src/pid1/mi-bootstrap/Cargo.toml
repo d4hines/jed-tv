@@ -1,0 +1,13 @@
+[package]
+name = "mi-bootstrap"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[profile.release]
+opt-level = "s"
+panic = "abort"
+strip = true
+

@@ -1,0 +1,19 @@
+name = "LoungeTest"
+defaultTargets = ["LoungeTest", "transcript"]
+
+[[require]]
+name = "Yt"
+path = "../../../../src/lean/yt"
+
+[[lean_lib]]
+name = "LoungeTest"
+
+[[lean_exe]]
+name = "transcript"
+root = "Main"
+
+# Host-only: drives the session against live YouTube through live.py
+# (`lake build live`; not a default target, not built for the TV).
+[[lean_exe]]
+name = "live"
+root = "LiveMain"

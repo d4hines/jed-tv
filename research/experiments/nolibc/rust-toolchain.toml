@@ -1,0 +1,4 @@
+[toolchain]
+# Stable, the same pin as src/. No nightly features and no -Zbuild-std.
+channel = "1.92.0"
+targets = ["aarch64-unknown-linux-musl", "armv7-unknown-linux-musleabihf"]

@@ -1,0 +1,34 @@
+{
+  "target": "G06 / V8-T221T04-LF1V109 / serial 4C0490290FA05A0C0",
+  "source": "Exact V109 partition backups and recorded /proc/config.gz; offline inspection 2026-10-31",
+  "cpu": "4 x Cortex-A55, AArch32, NEON and ARMv8 crypto; QEMU uses Cortex-A55 in AArch32 mode, not a cycle model",
+  "ram": "1463160 KiB MemTotal observed; QEMU 1430 MiB is an approximation, not the reserved-memory map",
+  "panel": [
+    1280,
+    720
+  ],
+  "speaker_pcm": "stock Android primary output: S16_LE stereo 48000 Hz; bare ALSA routing unproven",
+  "stock_kernel": "4.19.116+; CONFIG_IP_PNP=n, CONFIG_VDSO=n, CONFIG_ARM_LPAE=n, CONFIG_HIGHMEM=y, CONFIG_HZ_250=y, CONFIG_PREEMPT=y",
+  "display_requirements": [
+    "/vendor/tvconfig/config/sys.ini and OSD configuration must exist before module probe",
+    "mstar_fb_open returns EINVAL unless MI daemon initialization status is ready",
+    "MI_DISP and MI_OSD initialization, IOMMU allocation and layer visibility still need hardware validation"
+  ],
+  "gaps": [
+    "QEMU virt is not MediaTek MT9221; stock kernel and modules cannot run on this board model",
+    "QEMU kernel is newer than stock; a pass does not establish 4.19 syscall/driver compatibility",
+    "virtio-gpu substitutes for MI display; no panel, MI daemon, IOMMU or proprietary ioctl emulation",
+    "virtio-snd substitutes for MI_PCM/AOUT routing; ALSA card/device/rates on target remain unverified",
+    "virtio keyboard/rng/net and PL011/PL031 replace target peripherals",
+    "guest frame rate and boot time do not predict TV performance",
+    "standalone app runs use kernel IP_PNP; tvinit faithful runs use userspace static IPv4"
+  ],
+  "evidence_sha256": {
+    "/vendor/lib/modules/mstar_fbdev_mi.ko": "fc68e976963f5d344cdc12fabcafd1fd72ca2b6ccc546ca6abbe328ea8e5aefa",
+    "/vendor/lib/hw/audio.primary.mt5867.so": "8cafe3dd341e42756c47aa77d59c14dd4a99ace2bb7326f10e90407293f66d9a",
+    "/config/sys.ini": "1093765c5c706015d42efc2ea794bb37eb03696534e8394923718f9e0d4e5819",
+    "/config/OSD/OsdDefine.ini": "a6385a962fa04f42d679c34ff32b021949587df3f345c9507e9869d40478af2a",
+    "/config/mik_init.ini": "705a401a7db66699346eaedf24268136f5f94f2d67539a9ced905cd12fceaac1",
+    "/bin/midaemon": "43f6bb52b216f407674921b01fd10165551dcf6887e4eec1fb1728928e4aa3bf"
+  }
+}

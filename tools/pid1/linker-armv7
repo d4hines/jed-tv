@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(cd "$(dirname "$0")/../.." && pwd)
+export ZIG_GLOBAL_CACHE_DIR=${ZIG_GLOBAL_CACHE_DIR:-$root/assets/build/zig-global}
+export ZIG_LOCAL_CACHE_DIR=${ZIG_LOCAL_CACHE_DIR:-$root/assets/build/pid1-lean/zig-local}
+args=()
+for arg in "$@"; do
+  # Zig supplies the target's musl startup objects along with libc++.
+  case "$arg" in */self-contained/crt*.o) ;; *) args+=("$arg");; esac
+done
+exec zig c++ -target arm-linux-musleabihf -mcpu=cortex_a55 "${args[@]}"

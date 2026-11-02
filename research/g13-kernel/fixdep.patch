@@ -1,0 +1,11 @@
+--- a/scripts/basic/fixdep.c
++++ b/scripts/basic/fixdep.c
+@@ -210,7 +210,7 @@
+ 	    return;
+ 
+ 	define_config(m, slen, hash);
+-	print_dep(m, slen, "include/config");
++	printf("    $(wildcard include/config/%.*s) \\\n", slen, m);
+ }
+ 
+ /* test if s ends in sub */

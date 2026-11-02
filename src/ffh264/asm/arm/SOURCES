@@ -1,0 +1,9 @@
+libavcodec/arm/h264cmc_neon.S
+libavcodec/arm/h264dsp_neon.S
+libavcodec/arm/h264idct_neon.S
+libavcodec/arm/h264pred_neon.S
+libavcodec/arm/h264qpel_neon.S
+libavcodec/arm/hpeldsp_neon.S
+libavcodec/arm/me_cmp_armv6.S
+libavcodec/arm/startcode_armv6.S
+libavcodec/arm/videodsp_armv5te.S

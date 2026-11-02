@@ -1,0 +1,10 @@
+buildDir = "../../../assets/build/lake/yt"
+name = "Yt"
+defaultTargets = ["Yt"]
+
+# The YouTube app and its libraries, in Lean, for our runtime (../zr).
+# Every module under Yt/ is part of the library (no root import list to
+# edit): areas live in their own directories, Yt/<Area>/*.lean.
+[[lean_lib]]
+name = "Yt"
+globs = ["Yt.+"]

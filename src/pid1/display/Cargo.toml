@@ -1,0 +1,11 @@
+[package]
+build = "../../../tools/display/build.rs"
+name = "g06-display"
+workspace = "../.."
+version = "0.1.0"
+edition = "2021"
+publish = false
+autobins = false
+
+[lib]
+path = "lib.rs"

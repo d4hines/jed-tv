@@ -1,0 +1,100 @@
+G13 / T221T10 V013: programmable-remote recovery investigation
+2026-11-01 UTC
+
+RESULT
+
+No usable IR route to UART-enable or direct bootloader Fastboot was found
+in the inspected V013 early boot dispatcher. Its saved recovery/upgrade
+IR table is entirely zero, with a valid checksum. This is stronger evidence
+than the previously observed Enable=false line in the project configuration.
+It does not prove that every component of the TV lacks other IR behavior.
+
+The owner's Amazon link, https://www.amazon.com/dp/B093SY5RRT, identifies
+EWO'S XRT140 / EWOS-140, a replacement for Vizio remotes. The listing describes
+out-of-box operation with Vizio TVs and provides no custom-code programming,
+learning or JP1/USB loading procedure. It is not a documented programmable
+transmitter for the TCL service codes. No remote signal was measured or sent.
+
+SAVED DATABASE
+
+Read-only inputs: assets/backups/g13-v013-stock-20261031/{MBOOT,MPOOL}.img.
+Both current hashes match the original SHA256SUMS manifest.
+
+MPOOL begins with 29 records of three little-endian u32 values: offset,
+length and CRC32. Its table CRC at 0x15c is 0x2566b665 and verifies.
+
+Record 20, E_DB_IR_BOOTCHECK:
+  offset 0xe52c, length 200, CRC32 0xc971a876, verifies; all bytes zero.
+  Five records, each 40 bytes: protocol byte, padding, u32 header,
+  sixteen u16 command slots.
+
+Record 21, E_DB_IR_WAKEUP:
+  offset 0xe5f4, length 60, CRC32 0x04128908, verifies; all bytes zero.
+  This is NOT proof that standby IR is disabled: the newer format below
+  supplies actual wake settings.
+
+Record 26, E_DB_IR_INI_INFO:
+  offset 0x106c9, length 355, CRC32 0xd0fed2ec, verifies.
+  Version 0x30 with a 60-byte short-code list. Includes Mstar protocol 1,
+  header 0x807f, Power 0x46; TCL protocol 7, header 0x000f, Power 0xd5,
+  Home 0xf7 and other hotkeys. Standby wake configuration is separate
+  from early boot-mode selection.
+
+Project dataIndex_20046.ini selects
+  /vendor/cusdata/bsp/board/BD_MT5867-H1V1-B2-S_TCL/ir_config.ini
+Its [Mboot] entry points to [MIR_Mstar], which has Enable=false. The disabled
+entry describes protocol 1 / header 0x807f and the six codes below.
+
+EXACT BOOTLOADER EXECUTION
+
+Linked addresses use VA = MBOOT file offset + 0x273fdc00.
+
+get_boot_mode_from_ir at 0x27429b98 reads a decoded event through 0x2749632c,
+then calls Read_IRBootcheck_FromFlash at 0x2741ef54. The latter requests
+database record 20 from Read_FlashDataToAddr at 0x27414640. Its raw_read
+call is 0x2743b84c; its CRC comparison is at 0x274144d4.
+
+The dispatcher compares protocol and header, then the sixteen command
+slots. Its final table at 0x27641f5c handles only slots 1 through 6:
+
+  Slot  Disabled INI command  Returned mode  do_bootcheck action
+   1          0x1b                2        installed recovery
+   2          0x07                9        USB OTA check, recovery
+   3          0x16                4        custar, OTA fallback
+   4          0x15                8        usb_bin_check, OTA fallback
+   5          0x1f               10        recovery data wipe
+   6          0x19               11        recovery cache wipe
+   7..16                         0        unknown/no selected mode
+
+Mode 12 (setenv UARTOnOff on; saveenv) and mode 13 (direct mstar_usb
+bootloader Fastboot) exist in do_bootcheck but are absent from this IR
+dispatch table. The physical SAR key 0x15 is a separate input and must
+not be confused with IR command 0x15.
+
+research/recovery-probe/audit-g13-ir.py executes the exact ARM dispatcher,
+decoded-event reader, database reader and CRC implementation in Unicorn.
+Raw reads are served from an in-memory copy of the saved MPOOL. Logging
+is stubbed; unexpected command or environment mutation aborts the test.
+
+All six disabled Mstar service codes plus TCL Power/Home return mode 0
+with the saved database. A synthetic table in emulator RAM exercises all
+16 slots and returns [2,9,4,8,10,11,0,0,0,0,0,0,0,0,0,0]. This positive
+control rules out treating an emulator that always returns zero as proof.
+
+An artificial decoded event with protocol=header=command=0 matches the
+zero table and returns recovery. No on-air encoding yielding protocol 0
+has been established, and this would still select installed recovery;
+it is not a demonstrated workaround.
+
+Evidence: assets/research/g13-ir-audit-20261101/audit.json.
+Full disassembly: assets/research/g13-recovery-path-20261101/mboot-code.txt.
+No TV state, USB files, serial session or original image was changed.
+IR pulse decoding and hardware reception were not emulated or tested.
+Live firmware/database state after the V033 attempt remains unreadable.
+
+BACKGROUND SOURCE LIMIT
+
+The older Kogan GPL MBOOT tree has an IR_UART_ON_KEY branch:
+https://github.com/Benjamin-Dobell/kogan-tv-gpl/blob/master/MBoot/MstarApp/src/MsBoot.c
+That source describes another build. The exact V013 dispatcher above does
+not contain that action, so it cannot justify a UART-on remote code here.

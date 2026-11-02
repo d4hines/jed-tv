@@ -1,0 +1,2 @@
+/cache(/.*)? u:object_r:cache_file:s0
+/cache/recovery(/.*)? u:object_r:cache_recovery_file:s0

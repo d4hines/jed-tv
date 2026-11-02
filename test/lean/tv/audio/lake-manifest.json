@@ -1,0 +1,14 @@
+{"version": "1.3.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"type": "path",
+   "scope": "",
+   "name": "tv",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../src/pid1/lean",
+   "copy": false,
+   "configFile": "lakefile.lean"}],
+ "name": "audioTests",
+ "lakeDir": ".lake",
+ "fixedToolchain": false}

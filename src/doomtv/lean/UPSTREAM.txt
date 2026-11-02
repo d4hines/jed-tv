@@ -1,0 +1,65 @@
+Lean Doom engine: provenance
+============================
+
+Imported from https://github.com/iroblesrazzaq/doom_lean
+commit d10b2613721f346175ee366c70f00f0e7f1dc5cd (2026-09-09),
+directory lean/: Doom.lean, Doom/** (minus per-milestone *Test.lean
+modules), Verify.lean, FbTest.lean. The upstream SDL window front end
+(DoomMain.lean, native/) was not imported.
+
+That project is a Lean 4 port of Chocolate Doom
+353cf5001dfd5777c13327010fa58acb57b913b2, itself derived from id Software's
+GPL Doom source release. Upstream ships no LICENSE file; as a derivative of
+GPL-2.0-or-later code this engine is distributed under GPL-2.0-or-later.
+
+Game data: the TV build uses Freedoom (BSD-3-Clause). The upstream DEMO
+fixtures (traces, digests, reference frames) were produced from the shareware
+doom1.wad; they stay outside Git under
+assets/third_party/doom_lean/src/fixtures and are used only by host checks.
+
+Toolchain: upstream pinned Lean v4.33.0; this tree uses the repository's
+v4.35.0 (lean/lean-toolchain). The engine compiled unchanged; fb-test passed
+(DEMO1 frames 35/70/350/700/1050 and E1M1 tic 35 identical to the oracle).
+
+Playsim rewrite (branch d4hines/lean-doom-playsim)
+--------------------------------------------------
+Upstream simulated only enough of the game to replay the shareware demos.
+Doom/Playsim/** is now a function-by-function port of the Chocolate Doom
+game simulation (p_*.c, g_game.c game flow, wi_stuff.c/f_finale.c logic,
+st_stuff.c/hu_stuff.c tickers), covering Doom 1/Ultimate (E1-E4, E?M9),
+Doom II (MAP01-32 incl. MAP31/32 and the MAP30 cast), coop and deathmatch
+(altdeath, -timer), respawn/fast/nomonsters and the Freedoom DEHACKED
+lump subset (Frame fields, BEX [STRINGS]). C file-scope globals live in
+GameState so nested calls clobber them as in C; Chocolate's overrun
+emulations (spechit, intercepts, reject padding, donut, vertical-door
+specialdata type confusion) are reproduced. Doom/Render/** was not
+changed; the renderer still reads the same GameState fields.
+
+Doom/Game.lean is the game-flow API for front ends (NewGameOptions,
+newGame, playDemo, ticker, tickerNet, playerQuit, displayFrame,
+castKeyPress, checksum). Every tic records GameState.soundEvents
+(start/stop/music, with the origin and the oracle's audibility verdict).
+
+Checks (all compare every tic's TRACE.md digest with the oracle):
+  ./check-demos.sh             shareware DEMO1-3, freedoom1 DEMO1-4,
+                               freedoom2 DEMO1-4, freedm DEMO1-3
+                               (skips absent WADs/digests)
+  scripts/build-oracle.sh      builds the oracle into assets/build with nix
+                               SDL2 dev outputs (no system installs) and
+                               applies scripts/oracle-traceexits.patch
+  scripts/record-oracle.sh     records the Freedoom oracle digests and a
+                               MANIFEST.txt of oracle/WAD/digest hashes into
+                               assets/research/lean-doom-playsim/oracle-digests
+  scripts/fuzz.sh              synthetic demos (scripts/gen_demo.py) on both
+                               engines; case lists in scripts/cases/fuzz-*.txt
+  scripts/exits.sh             forced G_ExitLevel/G_SecretExitLevel at given
+                               tics (oracle -traceexits, verify --exits):
+                               intermissions, secret levels, finales;
+                               case lists in scripts/cases/exits-*.txt
+  scripts/brain.sh             Doom II boss brain: make_testwad.py moves the
+                               MAP30 start into the brain closet (adds a
+                               Keen); scripted fire kills both, then the
+                               exit, intermission, MAP30 text and cast run
+  scripts/gen_defs.py, gen_text.py regenerate Defs.lean / FinaleText.lean
+The oracle binary hash depends on its build directory (paths are
+embedded); rebuilt copies produced identical digests.

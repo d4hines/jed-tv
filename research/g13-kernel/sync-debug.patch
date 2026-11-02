@@ -1,0 +1,19 @@
+--- a/drivers/dma-buf/sync_debug.c
++++ b/drivers/dma-buf/sync_debug.c
+@@ -7,7 +7,6 @@
+ 
+ #include <linux/debugfs.h>
+ #include "sync_debug.h"
+-#ifndef CONFIG_DEBUG_FS
+ static struct dentry *dbgfs;
+ 
+ static LIST_HEAD(sync_timeline_list_head);
+@@ -32,7 +31,7 @@
+ 	list_del(&obj->sync_timeline_list);
+ 	spin_unlock_irqrestore(&sync_timeline_list_lock, flags);
+ }
+-#else
++#ifdef CONFIG_DEBUG_FS
+ void sync_file_debug_add(struct sync_file *sync_file)
+ {
+ 	unsigned long flags;

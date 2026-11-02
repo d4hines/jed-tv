@@ -1,0 +1,184 @@
+PID-1 shrink and playback bring-up checks
+2026-11-01T01:39Z. Source changes in ../agent1, uncommitted. No TV actions.
+Read CODEX_HANDOFF.txt for the earlier firmware, DWARF and packaging findings.
+
+PID-1 simplification
+--------------------
+tvinit now waits for its child, polls global remote keys and escalates Home
+from SIGTERM to SIGKILL in one loop. Removed the per-app watcher thread,
+Arc/AtomicBool synchronization and join. waitpid(WNOHANG) still reaps orphans
+and retries EINTR. This removes one concurrent actor from the future Lean
+model without reducing decoder parallelism. TV and QEMU both have four CPUs.
+Removed unused tvinit.autostart and tvinit.once options; no harness references
+used them. Existing home screen, app selection, Back/Home and bring-up remain.
+Removed boxed/dynamic pixel-conversion callbacks and duplicate packers;
+tvinit now shares VarInfo::pixel with platform::Framebuffer.
+
+Measured fresh release tvinit builds, before -> after ALL changes below:
+  ARM32: 527,172 -> 524,268 bytes (-2,904).
+  ARM64: 566,952 -> 563,536 bytes (-3,416).
+  tvinit main.rs: 608 -> 579 physical lines.
+Evidence: assets/build/tvinit-shrink/{before,after}.json and preserved baseline
+binaries. Other platform/validation code grew to handle actual boundaries;
+these figures describe the launcher, not a whole-stack source reduction.
+
+Concrete playback problems found and fixed
+------------------------------------------
+0. A failed framebuffer open caused tvinit to auto-launch its first tile,
+   potentially respawning Search repeatedly while MI display init was still
+   missing. It now retries after 500 ms without launching an app; existing
+   bring-up diagnostics keep running. The missing-display QEMU gate passed.
+
+1. Missing/failed audio could leave video waiting forever for its clock,
+   especially at end of video. The audio worker now marks failure/done and
+   requests quit. The main playback path joins its remote worker before
+   propagating an audio error. QEMU without a sound device now reports an
+   error and powers off normally instead of timing out. This does not prove
+   an apparently open PCM stream drives the physical speaker.
+
+2. The conversion-only benchmark failed to flush its decoder before indexing
+   frames[0]. Frame threading/B-frame reordering could buffer an entire tiny
+   clip, causing a panic. It now drains at EOF, rejects genuinely empty
+   output explicitly and picks the fastest MEASURED decode configuration
+   instead of simply calling the last thread count "best". A local four-frame
+   128x72 H.264 clip completes all three decode runs and conversion on both
+   ARM32 and ARM64. This is functional evidence, not TV throughput evidence.
+
+3. Unsafe decoded plane slices included a complete last stride. On a cropped
+   picture this can borrow past the actual addressed rows. Borrowed lengths
+   now use stride*(rows-1)+visible_width with overflow/isize bounds. Null
+   pointers, nonpositive/undersized geometry and unequal U/V strides reject
+   before slices are formed. The current Frame API deliberately has one
+   chroma stride; a future hardware decoder with unequal strides needs a
+   different representation, not a silent assumption.
+
+4. pick_video only capped height, so an extremely wide stream could bypass
+   the intended decode budget. It now requires known positive dimensions and
+   frame rate, width <=1280, height <= the requested cap and fps <=30.
+   Candidate rejection/selection is covered by a real ARM32 unit test.
+
+5. Pool::run previously accepted &self even though concurrent callers could
+   replace the lifetime-erased borrowed job while workers used it. It now
+   requires &mut self, enforcing serialized submissions in Rust. Existing
+   Converter::draw already owns &mut self; worker parallelism remains four.
+   The 2,000-round exactly-once worker-pool test passed inside ARM32 QEMU.
+
+6. Frame-hash checking silently accepted any matching prefix, including a
+   prematurely stopped decode. It now requires the ENTIRE reference by
+   default and validates frame numbering; an optional positional FRAME_LIMIT
+   explicitly selects a bounded prefix. framemd5 mode now stops at exactly
+   its requested count, including backpressure/drain handling. Six host
+   failure-case tests exercise truncation, numbering, extra frames and empty
+   logs. Full comparisons below use every frame, not an accidental prefix.
+
+New firmware-derived ARGB finding
+---------------------------------
+Exact libmi.so DWARF identifies E_MI_OSD_COLOR_FORMAT_ARGB8888 = 8
+(enumerator DIE 0x0007ac24), matching FB_WINDOW_FORMAT=8 in OsdDefine.ini.
+tvinit's old dimming mask (pixel>>1)&0x7f7f7f cleared alpha. If used with the
+configured ARGB plane, inactive tiles could become transparent even though
+QEMU's XRGB output looked fine. VarInfo::dim now preserves opaque alpha and
+uses reported colour bitfields; the About painter also uses the shared opaque
+pixel packer. Known ARGB/XRGB/BGR/RGB565 arithmetic is unit-tested. This does
+not add 16-bit display support, and live fb bitfields remain authoritative.
+
+Current source paths in agent1
+------------------------------
+  src/tvinit/src/main.rs
+  src/platform/src/fb.rs, src/platform/tests/pixels.rs
+  src/ytplay/src/{decode,player,pool,yt}.rs
+  test/check.py, test/check_framemd5.py, test/test_frame_completeness.py
+  test/tvinit-child.rs, test/run.py
+test/run.py --without sound|display omits a surrogate device for negative
+bring-up tests; it is a host test option, not a new TV runtime option.
+Generated test fixtures/logs/baselines live in assets/build/tvinit-shrink/.
+
+Verification completed
+-----------------------
+- Both release tvinit and ytplay architectures build.
+- ARM32 platform/pixel/playback test executables ran as children of tvinit
+  in faithful QEMU under the post-4.19 ENOSYS model: 1+1+3 tests passed.
+  Those cover pixel packing/opacity, remote codes, plane spans, format caps
+  and the worker pool. Native macOS platform tests are inappropriate because
+  this crate directly targets Linux syscalls; the initial native attempt
+  failed for that reason, then the actual ARM32 tests passed.
+- PID1 static-IP/stale-clock bring-up passed.
+- Uncooperative child: ignores SIGTERM, Home escalates to SIGKILL, parent
+  reaps it and returns to menu. Passed on ARM32.
+- Missing audio device: clean playback error/exit. Passed on ARM32.
+- Missing display device: bounded retries, no app launches. Passed on ARM32.
+- Four-frame reordered-video benchmark passed on ARM32 AND ARM64.
+- Offline home -> Coffee Run -> Home passed on ARM32.
+- Full YouTube/Home, Slides/Back, Doom/quit home tour passed on ARM64 before
+  the final ARGB change. The subsequent ARM32 home and pixel checks cover
+  that change; Doom multiplayer's separate agent is rebuilding its engine.
+- Latest full ARM64 reference: all 4,431 frame hashes match, zero differences.
+- Latest full ARM32 reference: all 4,431 frame hashes match, zero differences.
+  assets/build/tvinit-shrink/full-arm32-frames.json records the run:
+  assets/build/qemu-runs/faithful-20261031T183838-1793497118082703000/.
+- Explicit 240-frame ARM32 prefix also passed, exactly 240 frames.
+- Six host completeness-checker tests passed; git diff --check passed.
+
+The initial tiny-benchmark gate falsely failed because boot() returns both
+serial.log and captured stdout, duplicating lines. The assertion now checks
+the set of successful thread counts rather than counting duplicate lines;
+the actual benchmark had already completed. No decoder failure was hidden.
+
+Useful commands, from agent1
+-----------------------------
+  python3 test/check.py -k 'G06:'
+  python3 test/check.py -k framemd5
+  PYTHONDONTWRITEBYTECODE=1 python3 test/test_frame_completeness.py
+  cd src && cargo build --release --target armv7-unknown-linux-musleabihf \
+    -p tvinit -p ytplay
+The standard full suite keeps a 240-frame ARM32 comparison for speed. For a
+full ARM32 run use check.c_framemd5('faithful') with a local replay server;
+the root one-off did this and recorded all 4,431 frames above.
+
+What still can break on real hardware
+--------------------------------------
+- MI display initialization, IOMMU allocation, panel routing and true fbdev
+  geometry/panning remain unproved. No pure software test establishes them.
+- Speaker routing/amp/DSP setup is not established; an ALSA node or XML
+  declaration does not prove audible output. New failure handling makes
+  diagnosis bounded but does not supply the MI audio backend.
+- Sustained TV performance remains unmeasured. The old reference movie is
+  1280x536@24, not a full 1280x720@30 qualification. Offscreen benchmark fps
+  excludes actual scanout cost and full AAC/network/playback contention.
+  Decoder and converter pools can both consume four CPUs; test total system
+  load and thermal/governor behavior, not decoder-only peaks.
+- Decoder hash coverage is still a small corpus. It validates decoded pixels,
+  not colour metadata, audio synchronization, every SPS/PPS transition or all
+  supported AVC tools. The converter currently assumes limited-range BT.709;
+  SD/BT.601 and full-range colour handling need an explicit policy/test.
+- HTTP response headers/bodies currently have no resource cap and media GET
+  accepts HTTP 200 as well as 206. Oversized/range-ignored responses can grow
+  memory use; define measured response/fragment budgets before a Lean port.
+  This was inspected and recorded, NOT fixed during this pass.
+- Cold-boot network/time setup is still separate. With the observed stale
+  date, trusted live TLS needs a real time source; replay does not prove it.
+- Codec XML lists tunneled-playback support without marking it required.
+  That listing alone proves neither tunnel-only operation nor a working
+  ordinary native hardware-decode path. Avoid the earlier stronger inference.
+  The DWARF/native MI API route remains a promising investigation, not a
+  working hardware decoder integration.
+- Kernel handoff remains unresolved; no TV state was changed in this pass.
+
+Parallel Doom work
+-------------------
+The explicitly requested agent /root/doom_multiplayer completed a native
+UDP port of the compatible Chocolate Doom 2.2.1 protocol. It reports a local
+ARM64 host + ARM32 client FreeDM deathmatch with 19 matching gameplay-state
+samples through tic630, both players moving and firing, no divergence.
+The final normal-build artifacts passed the cross-architecture game test
+after the socket close-on-exec fix. Default native libraries and feature
+markers are refreshed; both normal Cargo builds pass and are safe to use.
+Solo startup passed before the socket-only change; solo does not open that
+socket. Mismatched IWAD-directory rejection also passed. Note that the
+sampled hash covers player state/commands, not the entire world state.
+Final ARM32 Doom is 973,296 bytes; ARM64 is 1,097,128 bytes. Private-LAN UDP
+uses port2342, with /etc/doom-network containing host or join IPV4; no file
+keeps solo behavior. Actual LAN/TV, loss/latency and reconnects are untested.
+Final authoritative note: agent1/research/doom-multiplayer-handoff.txt.
+No work remains running from this team; all changes are still uncommitted.
+No TV/network peer outside local QEMU or live YouTube was used by root.

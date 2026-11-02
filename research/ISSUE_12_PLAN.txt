@@ -1,0 +1,81 @@
+Issue 12: Lean PID 1 and app capabilities
+=======================================
+Branch: d4hines/pid1-demo. No hardware/boot changes in this workstream.
+
+Agreed target
+------------
+The long-term target is Lean PID 1. During development the owner permits
+freely mixing Lean and Rust, including unsafe Rust. Existing native launch
+mechanisms remain in src/lean/native/linux.c; app-selection and permission
+policy remain separate from those mechanisms.
+Each packaged app has a fixed ID, a distinct unprivileged UID, read-only
+assets, a private writable directory, and a fixed capability declaration.
+Apps may create threads, but not processes or execute other programs.
+PID 1 owns the remote. App input is delivered through Unix sockets; Home and
+Power remain reserved. Home returns to the launcher and stops all app activity.
+Authenticated service requests use launch-bound connections (never a claimed
+app ID in a message). Capabilities are checked on each request and revoked
+when the launch ends; old connections cannot acquire a new launch's authority.
+Networking is granted per app/domain/service, including constrained LAN UDP
+for Doom. Apps cannot bypass policy with direct Internet sockets or DNS.
+Direct display/audio access is a temporary, explicit migration exception.
+
+Parental controls: persist four-digit PIN and disabled-app bits. Default and
+invalid/missing-state fallback PIN is 0000 (owner's demo choice). Anyone using PID1 settings may
+disable; correct current PIN required to re-enable or change PIN. Disabling
+the foreground app stops it. Modest retry delay and PIN confirmation are
+secondary to capability and Home guarantees. No background apps initially.
+
+Implementation stages and acceptance
+------------------------------------
+1. Define executable Lean app table and confinement policy; enforce distinct
+   UIDs, bounded threads/memory/descriptors, no subprocesses/re-exec. PID 1
+   owns evdev and forwards nonreserved input through inherited Unix sockets.
+   Test hostile probes and ordinary video/audio/Slides/Doom in ARM32 QEMU.
+2. Move remaining launcher/event/rendering logic into Lean, using minimal
+   Linux primitives from the single C file. Preserve the runnable demo.
+3. Add launch-bound IPC service protocol and persistent settings UI/storage.
+   Exercise stale sessions, malformed/bounded messages and app disable flows.
+4. Broker per-app networking (domain/service rules, DNS and redirects checked;
+   LAN UDP scoped to configured peer/port). Deny direct bypass in kernel policy.
+5. Replace direct graphics/audio with revocable services; show Home before
+   asynchronous cleanup, without letting old app writes corrupt the display.
+6. Prove policy transitions/capability confinement against explicit kernel,
+   compiler, primitive and scheduling assumptions. No unconditional wall-clock
+   guarantee for a stuck kernel/device. Actual hardware has separate gates.
+
+Launch boundary
+---------------
+Use execveat on a reserved descriptor above the child's hard NOFILE limit.
+The descriptor is CLOEXEC; after the initial successful exec the app cannot
+allocate/duplicate/receive that descriptor again. A nonrecursive noexec root
+and device mount view with no live procfs blocks absolute-path execution and
+/proc/self/exe bypasses (the descriptor rule alone would be insufficient).
+Seccomp denies execve and
+allows execveat only on that reserved descriptor. Threads use constrained
+clone flags; fork/vfork/process clone and clone3 are denied. Filters and
+privilege drops are mandatory before app code starts, not app-cooperative.
+Validate this on both the graphical kernel and exact-stock-kernel QEMU.
+
+Honest intermediate scope
+-------------------------
+Until later stages land, the launcher still contains Rust and ordinary apps
+retain direct graphics/audio. The first stage does not establish domain-level
+network confinement, a complete filesystem allowlist, or immediate visible Home.
+Do not close issue 12 or call the whole target implemented on that basis.
+
+Stage 1 validation (2026-11-01)
+------------------------------
+Implemented: fixed Lean identities/limits and BPF policy, mandatory native
+launch gate, noexec mount views, root-owned physical remote, launch-bound
+Unix input sockets, distinct UIDs and private writable directories.
+Apps are denied fork/vfork/process clone and subsequent exec; threads work.
+Raw input and other apps' private directories are inaccessible. Home stops
+forwarding input immediately and retains TERM/KILL cleanup; immediate visual
+Home is still stage 5. Applications are not allowed to call settings APIs
+merely because any human may disable an app through the trusted settings UI.
+
+Passed native checks: 193536 menu + 80387 supervisor + 393567 BPF executions.
+Passed ARM32 graphical confinement/normal-app tests and dumped-kernel launch
+harness. See ISSUE_12_VALIDATION.txt for scope and repeat commands.
+Full Lean PID1, parental settings and the network broker remain unfinished.

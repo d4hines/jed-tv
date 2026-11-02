@@ -1,0 +1,14 @@
+{"version": "1.3.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"type": "path",
+   "scope": "",
+   "name": "ZrLean",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../src/lean/zr",
+   "copy": false,
+   "configFile": "lakefile.toml"}],
+ "name": "ZrTools",
+ "lakeDir": ".lake",
+ "fixedToolchain": false}

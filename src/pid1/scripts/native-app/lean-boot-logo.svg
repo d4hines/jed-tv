@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <!-- Lean's official wordmark path: https://lean-lang.org/ (2026-11-01).
+       Centered in white on black for the G13 boot JPEG. -->
+  <rect width="1280" height="720" fill="#000"/>
+  <text x="640" y="225" text-anchor="middle" fill="#fff" font-family="sans-serif" font-size="25">Built using the</text>
+  <svg x="397" y="275.5" width="486" height="169" viewBox="0 0 486 169"
+       fill="none" stroke="#fff" stroke-width="10">
+    <path d="M206.333 5.67949H105.667M206.333 5.67949L243.25 84.5M206.333 5.67949V84.5M243.25 84.5H317.549M243.25 84.5L279.667 163.321L280.889 163.318L317.549 84.5M206.333 84.5V163.321H5V5M206.333 84.5H105.667M317.549 84.5L353 5.67949M353 5.67949V164M353 5.67949H353.667L480.333 163.454H481V5"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <text x="902" y="296" fill="#fff" font-family="sans-serif" font-size="22">™</text>
+  <text x="640" y="493" text-anchor="middle" fill="#fff" font-family="sans-serif" font-size="25">programming language</text>
+  <text x="640" y="554" text-anchor="middle" fill="#bbb" font-family="sans-serif" font-size="22">Independent TV project · not endorsed by Lean FRO</text>
+</svg>

@@ -1,0 +1,77 @@
+Issue 12 confinement foundation: validation, 2026-11-01
+=====================================================
+Branch: d4hines/pid1-demo. No TV access, flashing or live boot changes.
+
+Public, firmware-free checks:
+  nix run .#lean-check
+  nix run .#pid1 -- --check-supervisor
+  nix run .#pid1 -- --check
+
+Native checks pass 193536 menu, 80387 supervisor and 393567 seccomp BPF
+executions. Both ARM and AArch64 filter instruction streams are interpreted;
+actual execution is ARM32. No Lean runtime/allocator imports in scalar policy.
+
+The hostile app verifies UID/eUID=10001, fork/vfork/process clone return EPERM,
+clone3 returns ENOSYS, execve and nonreserved execveat return EPERM, reserved
+launch fd is closed and cannot be recreated, absolute-path execveat receives
+EACCES on noexec mounts, /proc/self/exe is absent, raw input and another UID's
+private directory return EACCES, a thread can run, and SIGTERM can be ignored.
+The launcher handles duplicate Home, escalates to KILL and opens Slides next.
+The ordinary graphical tour covers generated video/audio, Home, Slides and
+Doom. It requires Doom engine initialization AND its tic/frame report before
+returning Home; opening the framebuffer alone is not considered success.
+C stdio requires readv; ARM signal handlers require legacy sigreturn as well
+as rt_sigreturn. Both old and time64 clocks are allowed for 4.19 fallback.
+
+Exact dumped-kernel check (private offline assets required):
+From the demo checkout obtain the app output:
+  nix eval --raw .#pid1.passthru.apps.outPath
+Set DEMO_APPS to that output, then from the hardware workspace run:
+  python3 research/qemu-g06/run.py \
+    --init "$DEMO_APPS/bin/confinement-init" \
+    --add-file "$DEMO_APPS/bin/uncooperative:/bin/ytplay" \
+    --add-file "$DEMO_APPS/bin/slides:/bin/slides" \
+    --timeout 25 --out assets/build/issue12-stock
+Require BOTH fixture: confinement PASS and G06-CONFINEMENT PASS in serial.log;
+the general runner's alive/no-panic exit alone does not assert these tests.
+Allow 25 seconds: the stock MMC initialization consumes about 12 seconds.
+
+Verified strict-probe run: assets/build/issue12-stock/g06-stock-1793517960128576000
+Kernel SHA256: 01e36bda0554aed46ad3aa1d7fdf688174f46241117f62b4b95f02e25c47c11e
+Kernel bytes modified: false. Four CPUs requested. Guest alive, no kernel fault.
+This checks kernel ABI/enforcement in the partial G06 emulator, not TV hardware
+or working emulated MStar display/audio/network devices.
+
+Graphical surrogate Linux 6.18.57 SHA256:
+a55f6cd545d574fd56774dd65bc9fe329a0bf5505bacac6e76a760489b46b5b8
+MULTIUSER and UNIX were missing from the old tinyconfig image; they are now on.
+NAMESPACES is also selected, optional namespaces disabled. Mount namespaces
+are available on the dumped kernel. Rebuild stale legacy surrogate kernels
+with tools/kernel/build.sh before using the new launcher outside nix run.
+
+Security boundary is staged: network-capable apps still have broad socket
+access pending service/domain brokering; device display/audio access remains
+direct. This is not completion of issue 12 or a whole-system security proof.
+
+Integrated hardware validation, 2026-11-01
+-----------------------------------------
+The merged Lean/Rust launcher ran on the real G06 without a reboot. Readback
+confirmed uid10001 YouTube, uid10002 Doom, uid10003 Slides, with
+NoNewPrivs=1 and Seccomp=2. App fd3 is the launcher-provided input socket;
+the app mount view hides raw input. Search/Back, Home and live playback passed;
+the owner confirmed visible video and working Doom. Native PID1 remains the
+existing Rust supervisor; this tests the integrated policies/apps beneath it.
+
+Same ARM32 app hashes passed the generic QEMU tour both through fbdev/ALSA
+and through shared RGBA/TCP PCM adapters. The PCM peer accepted 822848 frames
+across two streams with no protocol errors; it models protocol/timing only.
+Hostile app/Home tests passed on the graphical kernel and exact stock kernel.
+The updated executable Lean checks covered 393576 BPF, 80387 supervisor and
+193536 menu cases. Both ftruncate ABIs are allowed for shared-frame sizing.
+
+Evidence directories: assets/build/integration-qemu-1793518799891577000,
+integration-qemu-1793518811274881000, integration-qemu-1793518812075525000,
+and assets/build/integration-stock/g06-stock-1793518789481433000.
+Shared framebuffer access and audio TCP access remain migration exceptions.
+This does not establish full capability brokering, parental controls or a
+pure Lean PID1, and does not emulate vendor display/audio hardware in QEMU.

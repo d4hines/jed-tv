@@ -1,0 +1,40 @@
+G13 / T221T10 V013 ordinary bootloader unlock
+2026-10-31T18:42Z
+
+Authorization: owner requested "ok, let's try the same fastboot unlock"
+after being told that unlocking erases the new TV's user data/settings.
+
+Fresh preflight: product tcl9216, bootloader 01.01.250814, is-userspace no,
+unlocked no, current-slot a. USB path usb:1-1.1 was rediscovered first.
+
+Commands, in order, after preflight:
+  sudo -n fastboot -s usb:1-1.1 flashing unlock
+    OKAY, 0.211s, exit 0
+  sudo -n fastboot -s usb:1-1.1 getvar unlocked
+    unlocked: yes
+  sudo -n fastboot -s usb:1-1.1 getvar secure
+    secure: no
+  sudo -n fastboot -s usb:1-1.1 getvar current-slot
+    current-slot: a
+  sudo -n fastboot -s usb:1-1.1 reboot
+    OKAY, exit 0
+
+Unlock was issued exactly once. No reboot bootloader was inserted between
+unlock and normal reboot, preserving the pending stock recovery wipe.
+No downloaded firmware or partition image was flashed. No critical unlock,
+slot switch, relock or separate erase command was sent.
+
+Confirmed: bootloader's immediate unlocked-state readback and successful normal
+startup after unlock/reset. In response to the post-reboot observation request,
+the owner reported "Google TV setup screen". No additional recovery procedure
+or manual factory reset was needed to reach that screen.
+
+After reboot, Fastboot disappeared, ADB reported the previous network target
+offline, and TCP 192.168.77.2:5555 was unreachable. Network/debugging setup may
+need to be restored after the reset. Running-Android lock properties have not
+yet been rechecked. Do not repeat unlock to obtain that later check.
+
+This demonstrates that ordinary unlock -> read-only state queries -> normal
+reboot reaches setup on this G13/T221T10 V013 unit. It does not retrospectively
+prove the cause of the original G06/V109 startup failure, or establish that
+the same result will occur on every other firmware/hardware variant.

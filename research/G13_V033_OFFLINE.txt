@@ -1,0 +1,172 @@
+G13 V033: offline review with the new Lean/QEMU environment
+2026-11-01
+
+Scope and current result
+------------------------
+Reviewed and fast-forwarded the checkout to owner-fetched origin/main
+57d4ddc (Add Lean RAM bootloader and instrument G13 startup). Independent
+SSH/HTTPS fetch attempts could not authenticate; the tested revision is the
+owner's locally fetched reference. Existing kernel-source notes were retained.
+
+The owner explicitly deferred all further TV access. No ADB, UART, flash,
+reboot, boot-selection or TV staging command was used during this review.
+Earlier, before that instruction, this session inspected the TV and requested
+adb root; it had not installed or staged an update.
+
+The new QEMU environment works. V033 image preparation and policy compilation
+also pass offline. This does NOT establish that the V033 MediaTek kernel or
+its display/audio drivers boot on QEMU or on the physical TV. No V033 image
+has been flashed by this work, and no production compatibility guard changed.
+
+Generated evidence: assets/research/g13-v033-offline-20261101/
+Private V013 reference fixtures are symlinked under assets/ to the preserved
+/home/eduardo/tv_hack/assets/ copies. All emulated writes are in host memory.
+
+New environment validation
+--------------------------
+  nix develop .#bootloader -c python3 tools/bootloader/qemu.py --check
+
+PASS: Lean loader -> Debian ARM Linux 6.12.107 -> BusyBox /init, then poweroff.
+PASS: invalid boot-image header rejected before the kernel handoff.
+QEMU uses virt-11.1, one Cortex-A15, and no guest network or host block device.
+This is the generic kernel supplied by the new environment, not V033.
+The generic kernel lacks CONFIG_BOOT_CONFIG; the ARM preparation oracle below
+checks the bootconfig bytes independently.
+
+Also passed the supplied check-model, check-entry, check-cpu, check-images,
+check-fdt, check-verifiedboot and check-os scripts. Coverage includes 6668
+image/parser cases, 324 FDT/copy calls, nine CPU/cache/MIU cases, pure-memory
+and effect-type checks, six entry cases, secure-message serialization, and
+the six full V013 preparation/success/failure cases. The image audit reports
+21 private FFI primitives plus two entry stubs / 106 authored ARM instructions.
+These are execution tests and source audits, not formal hardware verification.
+
+Reports: new-qemu-check.log, baseline-checks.json, check-*.log, and
+assets/build/leanboot/{build.json,qemu-input/checks.json,*-check.json}.
+
+V033 package and filesystem validation
+--------------------------------------
+Exact official package:
+  /home/eduardo/tv_hack/assets/research/firmware/V8-T221T10-LF1V033/V8-T221T10-LF1V033.zip
+  1379019088 bytes
+  SHA256 e3e51c77cbd1b55ce28c5190e19640d15ba8ba31d424f376b98515e6cd431fb9
+
+Fresh whole-file RSA signature verification passed against the certificate
+extracted from V013 recovery. The embedded certificate and all ZIP CRCs match.
+All 19 extracted partition images independently match the sizes and SHA256
+hashes in the signed payload manifest. This is a full payload (minor version
+0, no old-partition hashes), targeting G13 / Android 14 / AU21, security patch
+2026-03-01. Its actual kernel is 5.15.180-android14-11.
+
+EROFS extraction failures are resolved: erofs-utils 1.9.4 removed handling
+needed by the legacy non-zero-padding LZ4 format in several of these images.
+The unmodified, hash-pinned upstream erofs-utils 1.8.10 reads them correctly.
+Build the isolated reader with:
+  nix build --impure --file research/g13-v033/erofs-legacy.nix --no-link --print-out-paths
+
+Its fsck.erofs successfully checked/extracted vendor, vendor_dlkm, system,
+system_dlkm, system_ext, product, linux_rootfs_a and tvservice. No firmware
+bytes were changed or decompression errors ignored. Older partial extraction
+directories in g13-kernel-source-20261101 remain historical/incomplete.
+
+Upstream implementations showing the format difference:
+  https://github.com/erofs/erofs-utils/blob/v1.8.10/lib/decompress.c
+  https://github.com/erofs/erofs-utils/blob/v1.9.4/lib/decompress.c
+
+Reports: signature-verification.json, payload-audit.json,
+filesystem-extraction.json, erofs-tool-path.txt; extracted files in extracted/.
+Payload schema: saved update_metadata.proto from AOSP android-14.0.0_r1.
+
+V033 through the unchanged compiled loader
+------------------------------------------
+  nix develop .#bootloader -c python3 research/g13-v033/check-loader.py \
+    assets/research/g13-v033-offline-20261101/images \
+    assets/research/g13-v033-offline-20261101/loader
+
+The real Lean ARM parsers accept all V033 boot/init_boot/vendor_boot sections,
+including unaligned input, and agree with the independent Python decoder.
+The existing virtual loader then prepares the actual V033 bytes under Unicorn:
+kernel and init image unchanged; vendor/generic ramdisks assembled; 1241 FDT
+properties checked; reservation and bootconfig trailer checked byte-for-byte.
+The test uses synthetic virtual-board boot arguments, not a TV-ready profile.
+
+The SCTLR read, cache clean and final handoff are intercepted in this test.
+It stops before executing the V033 kernel. The production G13 entry rejects
+these images with error 2 before output writes, as intended by its V013 guard.
+
+Relevant sizes differ from the current production profile:
+  kernel bytes:                 15872772
+  boot input through sections:  15880192
+  vendor ramdisk bytes:         18130361
+  vendor input through config:  18182144
+  stock generic ramdisk bytes:   2032585
+  embedded DTB bytes:              42382
+
+Report: loader/loader-check.json; actual prepared data under loader/.
+Do not load those synthetic virtual-board artifacts on the TV.
+
+Driver and native-startup findings
+----------------------------------
+Every one of the 27 modules in the saved V013 /proc/modules inventory has an
+ARM ELF counterpart labelled 5.15.180 in V033, including Mali, framebuffer,
+MI/MTAL, Realtek Wi-Fi/Bluetooth and USB. vendor_dlkm contains 39 modules:
+33 ARM and six AArch64 modules for other connectivity hardware. Seven ARM
+modules append -gc43214a576b3 to their release string. Do not select modules
+only by a loose filename/version match or load the AArch64 alternatives.
+Symbol CRC compatibility and hardware operation have not been tested here.
+
+V033 also requests tcl_dybridge.ko from init.fusion.rc, but that file was not
+found in the extracted filesystem set. Do not describe this package as having
+every referenced optional module merely because the existing 27 are present.
+
+V033's stock init is byte-identical to V013:
+  18b79298c5d1868d7b5b3bf77f69b664dc824b0120e47b0d663616d3febce75a
+The generic ramdisk still has 22 original entries. Its platform CIL is also
+byte-identical to the captured V013 policy. Stock policy and the existing
+adb-root/native-startup additions compile with V033's matching vendor,
+system_ext, product and mapping files. Debug variants intentionally use -N,
+as the current owner-debug policy does; normal domains remain enforcing in
+that design. Compilation is not a boot test or proof of policy correctness.
+
+V033 audioserver differs from V013. Rebuild its standalone shimmed copy before
+native startup; do not transplant the previously patched V013 executable.
+No new root/native boot image was built or staged in this review.
+
+Reports: modules.json, loaded-module-coverage.json, init-audit.json,
+policy-compile.json and the three compiled policy outputs.
+
+Mandatory second update stage and remaining work
+------------------------------------------------
+The manifest enables virtual A/B, LZ4 compressed COW snapshots, COW version 2.
+Only vendor has a postinstall action, and it is required:
+  bin/AB_OTA_POSTINSTALL_fusion
+
+That script writes its 50 MiB upgrade.img to the shared upgrade partition,
+then calls trigOAD_fusion. The ext4 image contains upgrade_image_ota.pkg
+(10948656 bytes). Its package header identifies an REE region; the encoded
+payload has not been decoded/authenticated as a standalone service package.
+It must not be advertised as independent USB recovery or a verified rollback.
+
+The helper's real ARM main was executed for source slots _a and _b with
+in-memory libc/property/environment mocks:
+  nix develop .#bootloader -c python3 research/g13-v033/check-postinstall.py \
+    assets/research/g13-v033-offline-20261101/extracted/vendor \
+    assets/research/g13-v033-offline-20261101/postinstall-emulation.json
+
+It selects the opposite slot's ota_oad mode, sets OAD_PARTITION=upgrade,
+OadUpgradeFile=upgrade_image_ota.pkg and OadUpgradeStatus=start, and saves the
+boot environment. Although set_env contains devicestate/adb_enable/first_setup,
+the helper deliberately ignores those three names in both tested paths.
+Other settings, including bootargs, are changed. The low-level storage writes,
+MBOOT's second-stage package execution and failure recovery are not emulated.
+
+Therefore this is more than a kernel replacement or an isolated inactive-slot
+write. Before a physical trial, with renewed TV access, capture current boot
+state and backups including MPOOL, upgrade and the modified boot images; check
+snapshot state and USB/UART recovery; retain the required vendor postinstall.
+Plan any native/root migration using V033 files and do not relax the Lean
+loader's exact V013 checks without a reviewed V033 hardware profile.
+
+The remaining decisive tests are physical V033 startup, recovery, root access,
+display/audio/IR/network, native launch and standby/wake. The owner has not yet
+authorized resuming TV access after the offline-only instruction.

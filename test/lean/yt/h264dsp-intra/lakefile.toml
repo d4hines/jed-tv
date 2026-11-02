@@ -1,0 +1,19 @@
+name = "H264DspTest"
+defaultTargets = ["H264DspTest", "transcript", "h264dspcmp"]
+
+[[require]]
+name = "Yt"
+path = "../../../../src/lean/yt"
+
+[[lean_lib]]
+name = "H264DspTest"
+
+# Transcript (host side of zr-build transcript).
+[[lean_exe]]
+name = "transcript"
+root = "Main"
+
+# Host-only: replay FFmpeg reference vectors from stdin and compare (Cmp.lean).
+[[lean_exe]]
+name = "h264dspcmp"
+root = "Cmp"

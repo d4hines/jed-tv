@@ -1,0 +1,6 @@
+name = "MenuShimTest"
+buildDir = "../../../../assets/build/lake/menu-shims"
+defaultTargets = ["MenuShimCheck"]
+
+[[lean_lib]]
+name = "MenuShimCheck"

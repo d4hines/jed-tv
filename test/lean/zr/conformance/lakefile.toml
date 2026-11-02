@@ -1,0 +1,21 @@
+name = "ZrLeanTest"
+defaultTargets = ["ZrLeanTest", "conformance"]
+
+[[require]]
+name = "ZrLean"
+path = "../../../../src/lean/zr"
+
+# The runtime conformance suite: compiled to C and run against both upstream
+# Lean's runtime (the `conformance` exe, recording expected/) and ours.
+[[lean_lib]]
+name = "ZrLeanTest"
+
+[[lean_exe]]
+name = "conformance"
+root = "ConformanceMain"
+
+# The Linux entry point for our runtime (zr-build conformance), with the per-app
+# DSL `main`; not built for the host.
+[[lean_lib]]
+name = "ConformanceLinux"
+roots = ["ConformanceLinux"]

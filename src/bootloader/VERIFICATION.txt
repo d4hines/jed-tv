@@ -1,0 +1,235 @@
+Bootloader verification map
+==========================
+
+Scope
+-----
+These are local source changes, not an installed TV image. The source follows
+tvinit's split between decisions, an effect interpreter and physical adapters.
+Use small state machines where the order of effects is the property being
+checked. Keep bounds, field decoding and address arithmetic as direct functions.
+Do not turn each register access into a state machine.
+
+Ordering: Flow.lean and Flow/Proofs.lean
+--------------------------------------
+The actual authentication, network execution, update installation and journal
+interpreters call Flow.run. Its transition table is compared with a separate
+ordered program specification. It accepts only successful completion of the
+current stage. Rejection and completion are terminal. A decreasing UInt32
+budget makes this runner total; every successful program fits that budget.
+
+Proved properties include:
+  execution_requires_signature / execution_requires_both_digests /
+  execution_requires_preparation:
+    Reaching invocation requires successful signature, source-image digest,
+    copied-image digest and CPU-preparation observations.
+  image_write_requires_durable_invalidation:
+    Image writing requires successful inactive-header invalidation and flush.
+  header_commit_requires_readback_and_flush:
+    Publishing a bank header requires signature success, a matching readback
+    digest and successful flush. Earlier stages are prerequisites as well.
+  journal_success_requires_readback:
+    Journal completion requires successful record readback verification.
+  reached_requires:
+    The prerequisite property holds for arbitrary completion-event lists,
+    including repeated, failed and out-of-order events.
+  successful_runner_follows_program:
+    The real monadic runner issues exactly the specified stages under the
+    recording interpreter. Terminal/exhausted runners issue no effects.
+
+tools/bootloader/FlowModel.lean additionally injects failure at every effect
+in the four real workflows and checks the exact emitted prefix. The platform
+callback implementations, truth of observations, and refinement from all
+physical executions to completion traces remain obligations. A stage called
+signature is not by itself proof of cryptographic verification.
+
+Reception: Update/Receiver/Plan.lean and Update/Receiver/Proofs.lean
+----------------------------------------------------------------
+The production receiver decodes fields, calls the pure step function and
+interprets its Decision. SessionId, ByteOffset and ByteCount distinguish
+protocol roles. The phase is idle, receiving or sealed.
+
+  sealed_never_appends / retransmission_never_appends:
+    Sealed data cannot be extended. Old chunks request byte comparison,
+    never overwrite received bytes. An explicit Abort permits a new session.
+  seal_requires_complete:
+    Seal requires the received count to equal the advertised total.
+  wrong_session_cannot_write / rejection_preserves_state:
+    A foreign session cannot change an active transfer's state, and rejected
+    decisions preserve state. Session IDs are not authentication credentials.
+  append_cannot_exceed_total / append_updates_exact_bytes:
+    Accepted appends stay within the total and advance by the exact byte
+    count, with no UInt32 wrap.
+
+Parsing and bounds
+------------------
+Packet, manifest, boot-image, FDT, bootconfig, journal and LZ4 parsing remain
+safe Lean over Reader/Writer capabilities. No parser imports a physical
+implementation. audit.py checks local imports transitively, rejects direct
+physical effects in the core and rejects foreign/unsafe definitions outside
+the reviewed boundary. It is a source regression guard, not a compiler proof.
+Ethernet/Descriptor.lean now owns the pure RX descriptor address/length
+validation; Unsafe/Emac only obtains the words and handles DMA ownership.
+
+Update/ParserProofs.lean proves that short/wrapping manifest spans and invalid
+packet lengths reject before reading. Header checks reject invalid magic or
+format before acceptance; those equations assume the stated pure read results.
+The descriptor parser rejects unknown slots and only passes payload lengths
+of at most 1514 bytes after removing the four FCS bytes. Proofs.lean contains
+the underlying no-wrap/range and out-of-bounds-no-effect theorems.
+
+This is not a proof of complete correctness of every parser. Memory ownership,
+stable input bytes, DMA exclusion and register meanings are physical-adapter
+preconditions. Some existing parsing loops are partial Lean definitions;
+their totality and worst-case resource usage are not proved here.
+
+Policy and executable addresses
+-------------------------------
+Proofs.lean covers the boot fallback cycle, journal selection/target and
+checked memory arithmetic. Update/Proofs.lean covers authenticated bank
+selection, compatibility, strict version increase and the other-bank target.
+NetworkBoot/Proofs.lean covers aligned in-bounds entry instructions, address
+arithmetic, busy-controller noninterference and rejected crypto-input spans.
+NetworkBoot.Executable carries the entry-fit proof into the call adapter.
+
+Physical update policy and rejection
+-----------------------------------
+Update/FlashPlan.lean fixes two application banks within upgrade. The
+sector_within_banks and sector_excludes_journal proofs cover every allowed
+bank/sector value, including the last sector; invalid_sector_never_invokes
+shows rejection without calling the physical-address continuation.
+sector_exact and different_banks_disjoint strengthen this to exact arithmetic
+without wrap and prove that different banks never alias, at any valid offsets.
+
+Update/FlashProofs.lean also checks the actual installManifest program:
+rejected_signature_only_rejects proves it equals a pure error when the
+verifier action equals pure false, for arbitrary Writer and Storage instances.
+This includes insufficient workspace. It is an effect-program equality after
+header parsing, not only a theorem about a trace stage named signature.
+rejected_payload_performs_no_writes proves the corresponding effect equality
+for a valid signature followed by a rejected payload digest.
+It still assumes the stated verifier observation; it does not prove HACL* or
+the FFI's behavior. first_storage_write_requires_authentication and
+commit_requires_authentication_and_readback connect the workflow to the
+ordering theorems above.
+
+The physical adapter distinguishes unreadable storage from invalid images.
+Read faults abort installation instead of authorizing initial provisioning.
+The new gate exposes Ethernet before normal-kernel checks and publishes its
+locally authenticated application choice through the final FDT, including
+on the MBOOT-input fallback path. The normal Linux mount and EROFS driver
+are outside these Lean proofs. Provisioning and physical power-loss tests
+are still pending; see tools/bootloader/update/FLASHING.txt.
+
+Power-loss specification: Update/StorageModel.lean
+-------------------------------------------------
+The specification separates durable media from a pending sector write. Reads
+of the model's durable state cannot observe a merely queued write; flush
+finishes it. A power cut may replace the pending sector with any bytes, so
+tears need not be prefixes or retain intact bits. Events use the production
+sector guard and a fixed target bank for an installation attempt.
+other_bank_survives and journal_survives quantify over arbitrary finite event
+lists and every protected byte. flushed_survives_power_loss
+proves stability after a completed abstract durability barrier.
+
+The explicit physical assumption is sector isolation: an operation cannot
+damage an unrelated sector. Card firmware/FTL power-loss behavior, truth of
+the hardware flush observation and formal refinement from driver execution
+to this specification remain unproved. Scheduled ARM tests complement that
+specification; they do not discharge these physical assumptions.
+
+Trust and checks
+----------------
+ProofAudit.lean checks theorem dependencies, including generated termination
+and equality helpers in the new runtime modules. It allows only propext,
+Classical.choice and Quot.sound: no sorry or native-evaluation assumptions.
+Proofs are erased; no proof evaluator or allocator is added to the firmware.
+
+Crypto results are observations of pinned HACL* code, not a Lean proof of
+Ed25519/SHA-256. Storage flush truth, physical torn-write behavior, DMA/cache
+coherence, CPU transitions, stack bounds and the compiler chain remain trusted
+or separately tested. A valid signature does not make uploaded code safe.
+See Unsafe/CONTRACTS.txt for physical preconditions and Update/README.txt for
+the replaceable root of trust and limits of software version checks.
+
+Local commands (no TV access):
+  nix develop .#bootloader -c python3 tools/bootloader/prove.py
+  nix develop .#bootloader -c python3 tools/bootloader/check-safety.py
+
+ARM build/audit and real-crypto fault checks are documented in
+tools/bootloader/update/README.txt. They exercise compiled Lean with emulated
+hardware; finite fault injection does not prove all physical failures.
+
+Local validation of this refactor (2026-11-01)
+--------------------------------------------
+  - Proof elaboration and assumption audit passed: 444 theorem declarations,
+    including generated helpers, using only the three logical axioms above.
+  - The model checks passed 29 effect-failure prefixes, all four successful
+    workflows, 12 terminal/budget cases, 16 network-controller traces, ten
+    crypto-span cases, eight entry bounds and six rejected type confusions.
+  - All 71 compiled ARM update checks passed, including 36 interrupted-write
+    cases, forged signatures, malformed packages, downgrade rejection and
+    readback/flush failures. Largest observed stack usage was 7996 bytes.
+  - Network execution passed with MMU enabled and disabled, with and without
+    an upload. Gate checks passed normal startup, fallback, recovery, corrupt
+    metadata, preparation failure and journal failure. Ethernet checks passed
+    193 packet/bounds cases and six driver cases.
+  - Base, updater and network build audits passed with no heap/runtime imports
+    or writable ELF globals. The boundary has 25 private FFI declarations and
+    136 authored ARM instructions; this refactor adds no assembly.
+
+Logs and machine-readable results are under assets/build/leanboot{,-proofs,
+-update,-network}/. These directories are regenerated, not immutable evidence.
+No TV access, flashing, boot configuration changes or hardware tests occurred.
+
+Direct application-flash candidate validation (2026-11-01)
+----------------------------------------------------------
+  - Proof elaboration/assumption audit: 482 theorem declarations, including
+    generated helpers; only the three standard logical axioms above.
+  - 78 ARM/FCIE checks passed, including 36 interrupted-write cases, initial
+    signed provisioning, inactive-bank preservation, rejected signatures and
+    card/DMA guards, read faults, Ethernet dispatch, idempotent final replies
+    and exact FDT bank publication. These execute the physical Lean driver
+    with modeled registers/card; they do not model media electronics.
+  - All 71 generic ARM updater checks still pass, including their separate
+    36 interrupted-write cases. Maximum observed stack there: 7988 bytes.
+  - Four network execution cases and all six compressed gate cases pass,
+    including authenticated app-choice propagation on Lean and stock-input
+    handoff. The delayed-commit/lost-ACK loopback tests pass with bounded
+    sender deadlines and repeated Seal requests.
+  - Existing FCIE and Ethernet checks pass: CRC/timeouts, card guards,
+    193 packet cases and six driver cases. Controller/flow/type tests pass.
+  - Base/updater/network audits pass without allocator/runtime imports or
+    writable ELF globals. This update implementation adds no ARM assembly.
+  - The signed application image is 10432512 bytes, below 16776704 capacity.
+    All 21 files extract byte-for-byte; all nine executables are ARM32.
+    Shell and host-tool syntax checks and git diff --check pass.
+
+Current per-artifact hashes and reports are in
+assets/build/leanboot-network/validation.json. Physical bank reservation,
+same-image device trial, normal-OS mount behavior and physical durability
+remain unvalidated. No TV access was made during this implementation.
+
+Offline controller/durability review
+------------------------------------
+The previous ARM candidate was reproduced accepting a wrong-partition app
+read and returning success after a write error appeared during card busy.
+App reads now check live EXT_CSD just like writes. The driver rechecks errors
+after busy clears, and flush rejects reset/disabled/busy-job controllers.
+
+The stronger proof audit passes 519 theorem declarations (including generated
+helpers), with the same three standard logical axioms and no sorry. The
+existing 78 ARM/FCIE cases and 59 scheduled hardware-model cases pass. Together
+these include 36 prefix tears and six non-prefix bit tears during card busy.
+The scheduled checks validate saved vendor-source hashes and partition bounds;
+exercise delayed commands, delayed DMA visibility and delayed persistence;
+reject all tested R1 errors and wrong card profiles; and check timeout/reset
+isolation and flush guards. No additional assembly or FFI was introduced.
+
+QEMU reaches Linux userspace and rejects a malformed boot header. Network
+execution, the six compressed-gate/fallback cases, sender retry/deadline tests
+and controller/type-boundary checks also pass on the rebuilt candidate.
+Full logs and hashes are under assets/build/leanboot-network/review-*.log,
+flash-hardware-checks.json and validation.json; proof output is under
+assets/build/leanboot-proofs/review.log. No TV access occurred. Card timing,
+real durability, exclusive upgrade reservation and on-TV mounts remain
+hardware/deployment obligations.

@@ -1,0 +1,311 @@
+import Rpg.Spec
+
+/-!
+# Checker
+
+The checker reads an Adventure and returns a list of errors in plain words.
+The DM reads these errors to fix a draft.
+
+The main theorem is `check_sound`: if the checker finds no errors, the Adventure is legal by the spec.
+-/
+
+namespace Rpg
+
+/-! ## Decision procedures for the spec
+
+These let `decide` evaluate most of the spec directly. The illegal Adventures use them
+to show that the spec itself rejects each cheat. -/
+
+instance (rules : RuleSet) (b : Being) : Decidable (SkillsWellBought rules b) := by
+  unfold SkillsWellBought; infer_instance
+
+instance (rules : RuleSet) (b : Being) : Decidable (LegalCreature rules b) := by
+  unfold LegalCreature; infer_instance
+
+instance (rules : RuleSet) (c : Being) : Decidable (LegalCharacter rules c) := by
+  unfold LegalCharacter; infer_instance
+
+instance (rules : RuleSet) (c : Being) (a : Adventure) (o : Outcome) :
+    Decidable (LegalOutcome rules c a o) := by
+  unfold LegalOutcome; cases o <;> infer_instance
+
+/-- No error if `p` is true, else one error with the message `msg`. -/
+def need (p : Prop) [Decidable p] (msg : String) : List String :=
+  if p then [] else [msg]
+
+/-- If `need p msg` gives no error, then `p` is true. -/
+theorem need_sound {p : Prop} [Decidable p] {msg : String}
+    (h : need p msg = []) : p := by
+  unfold need at h
+  split at h
+  · assumption
+  · simp at h
+
+/-- Errors in the skills of a being. -/
+def checkSkills (rules : RuleSet) (b : Being) : List String :=
+  need (∀ e ∈ b.skills, (rules.skillStep b e.1 e.2).isSome)
+    s!"{b.name}: a skill level is too low to buy" ++
+  need (b.skills.map (·.1)).Nodup
+    s!"{b.name}: a skill is listed twice"
+
+/-- If `checkSkills` finds no errors, the skills are bought correctly. -/
+theorem checkSkills_sound {rules : RuleSet} {b : Being}
+    (h : checkSkills rules b = []) : SkillsWellBought rules b := by
+  simp only [checkSkills, List.append_eq_nil_iff] at h
+  exact ⟨need_sound h.1, need_sound h.2⟩
+
+/-- Errors in the build of a Creature. -/
+def checkCreature (rules : RuleSet) (b : Being) : List String :=
+  need (∀ a ∈ [b.st, b.dx, b.iq, b.ht], rules.creatureAttributeMin ≤ a ∧ a ≤ rules.creatureAttributeMax)
+    s!"{b.name}: each attribute must be from {rules.creatureAttributeMin} to {rules.creatureAttributeMax}" ++
+  need (rules.points b ≤ rules.creaturePointLimit)
+    s!"{b.name}: costs {rules.points b} points, but the limit is {rules.creaturePointLimit}" ++
+  checkSkills rules b ++
+  need (rules.minST b.weapon ≤ b.st)
+    s!"{b.name}: ST {b.st} is too low for a {b.weapon.name} (needs {rules.minST b.weapon})"
+
+/-- If `checkCreature` finds no errors, the Creature is a legal build. -/
+theorem checkCreature_sound {rules : RuleSet} {b : Being}
+    (h : checkCreature rules b = []) : LegalCreature rules b := by
+  simp only [checkCreature, List.append_eq_nil_iff] at h
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
+  exact ⟨need_sound h1, need_sound h2, checkSkills_sound h3, need_sound h4⟩
+
+/-- Errors in the build of the Character. -/
+def checkCharacter (rules : RuleSet) (c : Being) : List String :=
+  need (∀ a ∈ [c.st, c.dx, c.iq, c.ht], rules.characterAttributeMin ≤ a ∧ a ≤ rules.characterAttributeMax)
+    s!"{c.name}: each attribute must be from {rules.characterAttributeMin} to {rules.characterAttributeMax}" ++
+  need (rules.points c = rules.characterPoints)
+    s!"{c.name}: costs {rules.points c} points, but must cost exactly {rules.characterPoints}" ++
+  checkSkills rules c ++
+  need (rules.minST c.weapon ≤ c.st)
+    s!"{c.name}: ST {c.st} is too low for a {c.weapon.name} (needs {rules.minST c.weapon})" ++
+  need (c.naturalDR ≤ rules.characterNaturalDRLimit)
+    (if rules.characterNaturalDRLimit = 0 then s!"{c.name}: the Character cannot have natural DR"
+     else s!"{c.name}: natural DR {c.naturalDR} is more than the limit of {rules.characterNaturalDRLimit}")
+
+/-- If `checkCharacter` finds no errors, the Character is a legal build. -/
+theorem checkCharacter_sound {rules : RuleSet} {c : Being}
+    (h : checkCharacter rules c = []) : LegalCharacter rules c := by
+  simp only [checkCharacter, List.append_eq_nil_iff] at h
+  obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
+  exact ⟨need_sound h1, need_sound h2, checkSkills_sound h3, need_sound h4, need_sound h5⟩
+
+/-- Errors in the modifier of a Success Roll. -/
+def checkModifier (rules : RuleSet) : Outcome → List String
+  | .roll _ m _ _ => need (rules.modifierMin ≤ m ∧ m ≤ rules.modifierMax)
+      s!"roll modifier {m} is not from {rules.modifierMin} to +{rules.modifierMax}"
+  | _ => []
+
+/-- Errors in a Success Roll that the Character `c` cannot try. -/
+def checkCanTry (rules : RuleSet) (c : Being) : Outcome → List String
+  | .roll t m _ _ =>
+    need (CanTryRoll rules c t m)
+      s!"{c.name} cannot try this {t.name} roll at {m}: the effective skill must be {rules.minimumRollLevel} or more"
+  | _ => []
+
+/-- Errors in the list of Creatures in a Fight. -/
+def checkFoesNonempty : Outcome → List String
+  | .fight fs _ => need (fs ≠ []) "a Fight has no Creatures"
+  | _ => []
+
+/-- Errors in one Creature of a Fight against the Character `c`. -/
+def checkFoe (rules : RuleSet) (c f : Being) : List String :=
+  checkCreature rules f ++
+  need (FightCanEnd rules c f)
+    s!"{f.name}: the Fight can never end, because neither side can hurt the other (attack skill below {rules.minimumRollLevel}, or no hit can get past Dodge and DR)"
+
+/-- Errors in the Outcome of a Choice. -/
+def checkOutcome (rules : RuleSet) (c : Being) (a : Adventure) (o : Outcome) : List String :=
+  o.targets.flatMap (fun t => need (SceneExists a t) s!"Scene {t} does not exist") ++
+  checkModifier rules o ++
+  checkCanTry rules c o ++
+  checkFoesNonempty o ++
+  o.foes.flatMap (checkFoe rules c)
+
+/-- If `checkOutcome` finds no errors, the Outcome is legal. -/
+theorem checkOutcome_sound {rules : RuleSet} {c : Being} {a : Adventure} {o : Outcome}
+    (h : checkOutcome rules c a o = []) : LegalOutcome rules c a o := by
+  simp only [checkOutcome, List.append_eq_nil_iff, List.flatMap_eq_nil_iff] at h
+  obtain ⟨⟨⟨⟨hTargets, hMod⟩, hTry⟩, hFoes⟩, hEach⟩ := h
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  -- Every target Scene exists.
+  · intro t ht
+    exact need_sound (hTargets t ht)
+  -- The roll modifier is in range.
+  · cases o <;> first | trivial | exact need_sound hMod
+  -- The Character can try a Success Roll.
+  · cases o <;> first | trivial | exact need_sound hTry
+  -- A Fight has at least one Creature.
+  · cases o <;> first | trivial | exact need_sound hFoes
+  -- Each Creature is legal and its Fight can end.
+  · intro f hf
+    have hf' := hEach f hf
+    simp only [checkFoe, List.append_eq_nil_iff] at hf'
+    exact ⟨checkCreature_sound hf'.1, need_sound hf'.2⟩
+
+/-! ## Reachability -/
+
+/-- The Scenes that the Choices of Scene `s` lead to. -/
+def successors (a : Adventure) (s : SceneId) : List SceneId :=
+  (a.scenes.filter (·.id == s)).flatMap fun sc => sc.choices.flatMap (·.outcome.targets)
+
+/-- A Scene in `successors a s` is one that a Choice in `s` leads to. -/
+theorem leads_of_mem_successors {a : Adventure} {s t : SceneId}
+    (h : t ∈ successors a s) : Leads a s t := by
+  simp only [successors, List.mem_flatMap, List.mem_filter, beq_iff_eq] at h
+  obtain ⟨sc, ⟨hsc, hid⟩, ch, hch, ht⟩ := h
+  exact ⟨sc, hsc, hid, ch, hch, ht⟩
+
+/-- Search from the Scenes in `seen`, for at most `fuel` steps.
+Returns `seen` plus every Scene found. Each step adds each new Scene once (`eraseDups`). Without
+that, a Scene that two Scenes lead to is added twice, and the list grows very fast. -/
+def explore (a : Adventure) : Nat → List SceneId → List SceneId
+  | 0, seen => seen
+  | fuel + 1, seen =>
+    let found := ((seen.flatMap (successors a)).filter (· ∉ seen)).eraseDups
+    if found = [] then seen else explore a fuel (seen ++ found)
+
+/-- If every Scene in `seen` can be reached, so can every Scene that `explore` returns. -/
+theorem explore_reachable {a : Adventure} :
+    ∀ (fuel : Nat) (seen : List SceneId),
+    (∀ x ∈ seen, Reachable a x) → ∀ x ∈ explore a fuel seen, Reachable a x := by
+  intro fuel
+  induction fuel with
+  -- No fuel: `explore` returns `seen`.
+  | zero =>
+    intro seen h
+    simpa [explore] using h
+  -- One more step: each Scene found is a successor of a Scene in `seen`.
+  | succ n ih =>
+    intro seen h
+    simp only [explore]
+    split
+    · exact h
+    · apply ih
+      intro x hx
+      rcases List.mem_append.mp hx with hx | hx
+      · exact h x hx
+      · rw [List.mem_eraseDups] at hx
+        simp only [List.mem_filter, List.mem_flatMap] at hx
+        obtain ⟨⟨s, hs, hsucc⟩, _⟩ := hx
+        exact Reachable.next (h s hs) (leads_of_mem_successors hsucc)
+
+/-- The Scenes that the checker finds can be reached from the start. -/
+def reachableScenes (a : Adventure) : List SceneId :=
+  explore a (a.scenes.length + 1) [a.start]
+
+/-- A test Adventure with many paths: Scene `i` leads to Scenes `i + 1` and `i + 2`, for 20 Scenes.
+Each Scene can be reached in many ways. -/
+private def manyPaths : Adventure where
+  title := "Many paths"
+  start := 0
+  scenes := (List.range 20).map fun i =>
+    { id := i, title := "", text := "",
+      choices := if i + 2 < 20 then [{ text := "a", outcome := .goto (i + 1) },
+                                     { text := "b", outcome := .goto (i + 2) }] else [] }
+
+-- The search lists each Scene once, so its size stays at the number of Scenes.
+#guard (reachableScenes manyPaths).length == 20
+
+/-- Every Scene in `reachableScenes a` can be reached from the start. -/
+theorem reachable_of_mem {a : Adventure} {x : SceneId}
+    (h : x ∈ reachableScenes a) : Reachable a x := by
+  apply explore_reachable _ [a.start] _ x h
+  intro y hy
+  simp only [List.mem_singleton] at hy
+  subst hy
+  exact Reachable.start
+
+/-! ## A way to an Ending -/
+
+/-- The numbers of the Endings: the Scenes with no Choices. -/
+def endings (a : Adventure) : List SceneId :=
+  (a.scenes.filter (·.choices.isEmpty)).map (·.id)
+
+/-- Each Scene in `endings a` is an Ending. -/
+theorem isEnding_of_mem_endings {a : Adventure} {s : SceneId}
+    (h : s ∈ endings a) : IsEnding a s := by
+  simp only [endings, List.mem_map, List.mem_filter, List.isEmpty_iff] at h
+  obtain ⟨sc, ⟨hsc, hnil⟩, hid⟩ := h
+  exact ⟨sc, hsc, hid, hnil⟩
+
+/-- Search back from the Scenes in `found`, for at most `fuel` steps. Each step adds every Scene
+with a Choice that leads into `found`. Returns `found` plus every Scene added. -/
+def exploreBack (a : Adventure) : Nat → List SceneId → List SceneId
+  | 0, found => found
+  | fuel + 1, found =>
+    let more := (a.scenes.map (·.id)).filter fun s =>
+      s ∉ found ∧ (successors a s).any (· ∈ found)
+    if more = [] then found else exploreBack a fuel (found ++ more)
+
+/-- If an Ending can be reached from every Scene in `found`, the same is true for every Scene
+that `exploreBack` returns. -/
+theorem exploreBack_reachesEnding {a : Adventure} :
+    ∀ (fuel : Nat) (found : List SceneId),
+    (∀ x ∈ found, ReachesEnding a x) → ∀ x ∈ exploreBack a fuel found, ReachesEnding a x := by
+  intro fuel
+  induction fuel with
+  -- No fuel: `exploreBack` returns `found`.
+  | zero =>
+    intro found h
+    simpa [exploreBack] using h
+  -- One more step: each Scene added has a Choice that leads into `found`.
+  | succ n ih =>
+    intro found h
+    simp only [exploreBack]
+    split
+    · exact h
+    · apply ih
+      intro x hx
+      rcases List.mem_append.mp hx with hx | hx
+      · exact h x hx
+      · simp only [List.mem_filter, List.any_eq_true, decide_eq_true_eq] at hx
+        obtain ⟨_, _, t, ht, hfound⟩ := hx
+        exact ReachesEnding.next (leads_of_mem_successors ht) (h t hfound)
+
+/-- The Scenes from which the checker finds a way to an Ending. -/
+def endingScenes (a : Adventure) : List SceneId :=
+  exploreBack a (a.scenes.length + 1) (endings a)
+
+/-- From every Scene in `endingScenes a`, an Ending can be reached. -/
+theorem reachesEnding_of_mem {a : Adventure} {x : SceneId}
+    (h : x ∈ endingScenes a) : ReachesEnding a x := by
+  apply exploreBack_reachesEnding _ (endings a) _ x h
+  intro y hy
+  exact ReachesEnding.ending (isEnding_of_mem_endings hy)
+
+/-- All errors in an Adventure, for the Character `c`. Each error names its Scene. -/
+def check (rules : RuleSet) (c : Being) (a : Adventure) : List String :=
+  -- Each search runs once, not once for each Scene.
+  let reach := reachableScenes a
+  let ends := endingScenes a
+  need (SceneExists a a.start) s!"the start Scene {a.start} does not exist" ++
+  need (a.scenes.map (·.id)).Nodup "two Scenes share a number" ++
+  need (∃ s ∈ a.scenes, s.choices = []) "no Scene is an Ending" ++
+  a.scenes.flatMap (fun s =>
+    s.choices.flatMap (fun ch =>
+      (checkOutcome rules c a ch.outcome).map (fun e => s!"Scene {s.id} ({s.title}), choice \"{ch.text}\": {e}"))) ++
+  a.scenes.flatMap (fun s =>
+    need (s.id ∈ reach) s!"Scene {s.id} ({s.title}) cannot be reached from the start") ++
+  a.scenes.flatMap (fun s =>
+    need (s.id ∈ ends)
+      s!"Scene {s.id} ({s.title}) has no way to an Ending: no path of Choices from it leads to a Scene with no Choices")
+
+/-- **The checker is sound.** If `check` finds no errors, the Adventure is legal by the spec. -/
+theorem check_sound {rules : RuleSet} {c : Being} {a : Adventure}
+    (h : check rules c a = []) : LegalAdventure rules c a := by
+  simp only [check, List.append_eq_nil_iff, List.flatMap_eq_nil_iff, List.map_eq_nil_iff] at h
+  obtain ⟨⟨⟨⟨⟨hStart, hNodup⟩, hEnding⟩, hScenes⟩, hReach⟩, hEnd⟩ := h
+  refine ⟨need_sound hStart, need_sound hNodup, need_sound hEnding, ?_, ?_, ?_⟩
+  -- Every Choice is legal.
+  · intro s hs ch hch
+    exact checkOutcome_sound (hScenes s hs ch hch)
+  -- Every Scene can be reached.
+  · intro s hs
+    exact reachable_of_mem (need_sound (hReach s hs))
+  -- From every Scene, an Ending can be reached.
+  · intro s hs
+    exact reachesEnding_of_mem (need_sound (hEnd s hs))
+
+end Rpg

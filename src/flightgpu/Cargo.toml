@@ -1,0 +1,10 @@
+[package]
+name = "flightgpu"
+version = "0.1.0"
+edition = "2021"
+description = "GPU renderer for the city flight demo: draws the city with GLES 2 on the TV's Mali through the stock Android GL stack, from the state flighttv publishes (Android ABI, native PID 1 session)"
+
+[dependencies]
+# World geometry and the HUD only; the Lean plant stays in flighttv.
+cityflight = { path = "../third_party/cityflight", default-features = false }
+flighttv = { path = "../flighttv" }

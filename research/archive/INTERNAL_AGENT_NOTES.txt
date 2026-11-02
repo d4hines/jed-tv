@@ -1,0 +1,945 @@
+# TCL 32Q3K workspace
+
+G13 signed network boot installed (2026-11-01): boot_a SHA256
+f10714cb2d5d908b1e030228513b88b072a996f99471ef6e67be1fc32abd3779.
+The v4 compressed Lean gate occupies the same 128 KiB kernel prefix; the rest
+of boot_a, MBOOT, other boot images and slot selection are preserved. Before
+Lean OS preparation it accepts a temporary ARM bootloader over Ethernet at
+192.168.77.3:7533 using the SAME signed manifest/UDP protocol as updates. The
+1 MiB payload limit and compiled Ed25519 key are enforced; no unsigned mode.
+The private signing key is host-only under ignored assets/private/network-boot/.
+Three installed restarts passed: forged-signature rejection plus a signed
+1 MiB execution, MBOOT-input escape, and Lean without an upload. All reached
+native READY with Ethernet ADB and matching boot_a readback. The valid 1 MiB
+transfer took 2.56s. The final journal is sequence 16/state 1; next is Lean,
+then the one-start escape. No-upload reboot-to-READY measured 37.59s.
+Use tools/bootloader/update/try-network.py; read its README and
+research/G13_SIGNED_NETWORK_BOOT.txt for the command, current verification,
+entry ABI, exact backups and limitations. Never install the public test key.
+No physical update-bank writer is enabled: the bank updater has only a local
+model and a successful RAM-bank hardware trial. Policy proofs are not an
+end-to-end signature-enforcement proof.
+
+The existing Lean -> Lean -> MBOOT-input fallback cycle remains. All full
+kernel starts count, including adb reboot; Home success does not reset it.
+The third start skips Ethernet and runs the same native OS, not Android or
+slot b; the following start returns to Lean. Journal writes remain restricted
+to upgrade's two tail sectors. MBOOT supplies early board initialization and
+image loading; the Lean gate makes no runtime MBOOT calls. Read
+research/G13_LEANBOOT_DEFAULT.txt and src/bootloader/Unsafe/CONTRACTS.txt before
+changes. UART MBOOT recovery and exact backups remain available; a damaged
+initial stage cannot be rescued by its own three-start policy.
+
+Lean RAM Ethernet verified (2026-11-01): separate g13-ethernet.bin exchanges
+ARP, ICMP and UDP echo at 192.168.77.3:7533 without Linux or MBOOT network calls.
+11 hardware checks passed, including full MTU. It is manually uploaded/run from
+the existing Screen/MBOOT prompt; this separate probe adds no updater, eMMC
+writer or persistent entry. Normal reset returned to native READY +18.86s. Read
+research/G13_LEANBOOT_ETHERNET.txt and src/bootloader/Unsafe/CONTRACTS.txt
+before repeating.
+MBOOT enters ARM/SVC with IRQ/FIQ enabled; the Ethernet entry masks/restores
+them. The earlier refactored OS entry still requires masking from its caller.
+
+G13 app deployment checkpoint (2026-11-01, before network boot): source 6730586 (origin/main 0fab3c8
+plus bootloader proofs) apps are installed with local G13 packaging fixes
+that include Axiom and RPG art. Snake and Axiom now launch from Home;
+both rendered and returned through Home. Axiom audio is blocked by its
+no-network sandbox policy against the TV's TCP PCM bridge; follow-up needed.
+The normal reboot reached native Home at UART READY +19.08s, bootloader=MBOOT
+on the scheduled stock-input fallback. All 29 runtime files matched after
+reboot, as did the original boot_a/init_boot_a/MBOOT and selection hashes.
+No firmware partition was flashed. Ethernet remains 192.168.77.3. Existing
+Wi-Fi credentials/configuration are preserved and private, never copy them
+into Git. Wi-Fi DHCP timed out on the validation reboot; one service restart
+restored 192.168.4.11 and wifi_ready=1 with the original configuration.
+Details, rollback archives and limitations (including slow City
+Flight): research/G13_DEVELOPMENT.txt and assets/research/g13-current-update/.
+
+Source layout rule agreed with the team: `src/` is the human-auditable source
+that runs on the TV. Build-only tools, code generators, host-only checks and
+other development machinery belong outside `src/` (for example `tools/`,
+`test/`, or `nix/`). Keep TV runtime scripts in `src/`; do not place build or
+code-generation scripts there merely because they build a particular app.
+
+Lean source packages must set buildDir under assets/build/lake/. Generated
+C, object files and binaries stay outside src/; .lake in src/ may contain only
+Lake configuration metadata. Host tools must honor package buildDir overrides.
+
+Shared main is collaborative: never force-push main or rewrite its published
+history. Integrate concurrent work with normal merges and normal pushes.
+
+Hackathon implementation rule: prefer one clear current implementation. Do not
+add feature flags, backend selectors, compatibility branches, or fallback paths
+just to preserve old behavior. Experiment on work branches; once a replacement
+works, remove the superseded code and write the result as if it were the original
+design. Reviewability matters more than backward compatibility. Keep necessary
+hardware identity checks and resource-ownership checks.
+
+Layout rule (owner, 2026-11-01): `src/` holds only what runs on the TV, plus
+the Lean that TV code is generated from (the assembly DSL, the C ABI
+descriptions) and proofs or specifications kept next to the code they are
+about. Everything else lives outside `src/`: tests and checks in `test/`, host
+tools and build scripts in `tools/`, Nix code in `nix/` (the flake stays at
+the root), finished experiments in `research/`. A Lean package with both kinds
+of code is split into the TV package in `src/` and a host package outside it
+that requires it by path (e.g. `tools/lean/zr`, `test/lean/yt`, `test/doomtv`,
+`test/slides`). Exception: a Rust crate's manifest, `build.rs` and in-crate
+tests stay with the crate, where cargo needs them.
+
+App/QEMU track (branch d4hines/agent1): read `NEXT_STEPS.md` for the current
+state, how to build and test, and the prioritized next steps.
+
+Lean YouTube track (not yet merged into main; coordinating session main-c6):
+YouTube rewritten in Lean on our own Lean runtime (`src/lean/zr`, copied from
+dande-router; byte-identical conformance with upstream Lean on 32-bit ARM in
+QEMU), with its own H.264 decoder. On its branches the Lean app is
+`/bin/ytplay` (owner-approved swap, 2026-11-01): the Rust player, `src/mp4`
+and FFmpeg's decoder are removed, and the app links no C library. For review:
+branch d4hines/qemu (worktree ../qemu), and the same merged with main on
+d4hines/qemu-main (worktree ../qemu-main); work branches d4hines/lean-youtube
+and d4hines/lean-h264-app. Status: `src/lean/yt/STATUS.md`; architecture and
+milestones: GitHub issue 12. Sub-worktrees ../lean-neon, ../lean-tls,
+../lean-formats, ../lean-aac belong to it. Before changing `tv_app_v1`,
+`lean/`, or the runtime/launcher boundary, read issue 12 and message main-c6
+if that session is running.
+
+Firmware backups, downloads, captured logs, decompiled code and build outputs
+live under `assets/`, which is ignored by Git. The original hierarchy is
+preserved there (for example, `assets/backups/` and `assets/research/firmware/`).
+Authored scripts and notes remain in `research/`. Save new generated data in
+`assets/`; archived reports inside it retain their historical paths. See
+`README.txt` for the layout and `assets/layout-migration/` for the move record.
+
+Read `RECOVERY_NOTES.txt` before changing TV boot state or flashing partitions.
+It records an actual unlock-related startup failure and the recovery that
+restored the owner's Google TV setup screen on 2026-10-30.
+
+- G13 SECOND MAIN REBASE VALIDATED (2026-11-01, base 07dc37e): recovered the
+  local bootloader/startup commit from the reflog and retained it at
+  backup/g13-main-69d6c6c before replay. The new Lean PID1 code is preserved.
+  Patched linker shebangs in the Nix app build; G06/G13 builds, all four QEMU
+  app gates, 19 Lean lifecycle/13 scalar ABI cases and 16 Python tests pass.
+  All 1206 build inputs match tested packages. No push or TV state change.
+  See research/G13_DEVELOPMENT.txt and assets/research/g13-rebase-07dc37e/.
+- G13 MAIN REBASE VALIDATED (2026-11-01, base 93b2d3b): all 45 intervening main
+  commits retained; local replay had no conflicts and published history was
+  not rewritten. The original local commit is at backup/g13-before-main-rebase-65ee7f2.
+  Host-only bootloader generator/DSL/harness moved to tools/bootloader per the
+  source-layout rule; the OS payload is byte-identical. Fixed Slides helper
+  execution in Linux Nix builds and G13 staging for app ID 6/new executables.
+  Both app variants build; all four QEMU app gates pass including RPG/Flight;
+  Lean policy/ABI, Python, Rust, native backend and bootloader checks pass.
+  Offline G13 startup-image rebuild retains installed init_boot SHA256.
+  No TV state change or push. See research/G13_DEVELOPMENT.txt and
+  assets/research/g13-leanboot-functional/main-* for exact scope and evidence.
+- G13 LEAN EFFECT/CORE REFACTOR (2026-11-01): current source separates pure
+  Plan values, Reader/Writer-parametric preparation and a HardwareM driver.
+  Physical RAM is MemoryM; CPU/MMIO/UART/SMC/handoff are HardwareM, with private
+  raw externs and explicit lifts/runners. Supported G13 entry leanboot_os_start
+  establishes a private stack 26330000..26340000, checks mode/SP/SCTLR in Lean,
+  then calls the core. A success callback receives KernelConfig; no heap or
+  indirect callback survives compilation. Observed stack use: 584 bytes.
+  ARM exact-image, pure-state/effect-type and QEMU Linux tests pass. The new
+  23236-byte image is OFFLINE VERIFIED ONLY; no TV state changed this turn.
+  Unsafe/ now has 84 G13 + 22 QEMU ARM instructions. Preserve the earlier
+  hardware-tested image/source in assets/research/g13-leanboot-os/secure-trial/.
+  Read research/G13_LEAN_BOOTLOADER.txt and Unsafe/CONTRACTS.txt before entry.
+- G13 LEAN OS BOOT / QEMU (2026-11-01, before refactor above): ordinary Lean -> C prepares
+  Android v4 images, fixes the FDT, assembles initramfs/bootconfig and performs
+  cache/CPU handoff without runtime MBOOT calls. The second RAM-only trial
+  reached native READY at 19.91 s, including display/audio/IR and Ethernet.
+  It independently serializes the exact verified-boot message in Lean and
+  sends SMC b200585e through a six-instruction FFI; hardware returned zero.
+  The first trial omitted that message and failed init_user0, requesting
+  recovery. Its BCB request was backed up, selectively cleared and verified;
+  normal startup was restored without erasing data before the second trial.
+  Evidence: assets/research/g13-leanboot-os/secure-trial/. No bootloader/image
+  was flashed, no automatic jump installed. Physical Home confirmation pending.
+  Ethernet ADB/root and the native file manifest passed; running FDT exactly
+  matches Lean output. Boot ID 6becc9a6-d9db-4de7-972b-5afbf2897eeb. Installed
+  init_boot/MBOOT hashes are unchanged; host media links restored. misc says
+  boot-poweron with empty recovery arguments. No catcher remains running.
+  QEMU Linux + BusyBox and bad-image rejection pass independently via
+  nix develop .#bootloader -c python3 tools/bootloader/qemu.py --check.
+  Unsafe/ contains 71 G13 ARM instructions and 21 QEMU-only instructions;
+  all loops/policy are Lean. UART bulk uploads now use YMODEM through Screen
+  plus checked raw LZ4 via MBOOT: 12.22 s vs 79.87 s for the same loader and
+  control data over word commands. Read current
+  research/G13_LEAN_BOOTLOADER.txt and tools/bootloader/README.txt first.
+- G13 PARALLEL AUDIO STARTUP (2026-11-01): the supervisor now initializes
+  audio while the launcher prepares its namespace/first frame. Display/OSD
+  retain the frame dependency and cleanup/readiness checks are unchanged.
+  Reboot passed at 18.80 s to READY; no total speedup is established. Audio
+  started waiting for media.audio_policy at 13.56 s and returned at 18.57 s,
+  so earlier client startup is still blocked by vendor media initialization.
+  Installer: tools/native-app/g13-boot.py parallel. See the parallel-startup
+  section in research/G13_DEVELOPMENT.txt and assets/research/g13-startup-parallel-20261101/.
+- G13 STARTUP TIMING / UART MILESTONES (2026-11-01): startup scripts now print
+  DANDE_BOOT with kernel uptime directly to /dev/console, including READY
+  after the display's startup frames and audio readiness. Three normal
+  reboots reached READY at 18.67, 18.38 and 18.66 s from Linux start. Owner
+  confirmed Home visible by READY on the last run. Overlapping unused
+  framework-service cleanup with launcher setup moved Home preparation from
+  17.03 s to 14.66 s; the small total difference is not a proven speedup.
+  SELinux recompilation consumes 4.79-4.82 s each boot; vendor media startup
+  still determines final readiness. No firmware was flashed. Both physical
+  standby/mains startup are slow per owner; those durations remain unmeasured.
+  See research/G13_DEVELOPMENT.txt and assets/research/g13-startup-timing-20261101/.
+- EARLIER G13 LEAN PARSER REFACTOR, OFFLINE ONLY (2026-11-01): owner requested
+  independent reverse-engineered loading, ordinary Lean -> C, and minimum
+  assembly with all unsafe operations centralized. Main.lean now owns the
+  entire UART loop/entry. Unsafe/ holds exactly three FFI primitives and
+  12 ARM instructions plus contracts; build.py enforces their audit.
+  Memory/Images.lean implement checked v4 boot/vendor and DT-table readers:
+  6668 ARM cases pass, plus 12994 policy cases and 8 whole UART executions.
+  New 312-byte probe has NOT run on the TV; prior 288-byte hardware-tested
+  source/artifacts are retained in assets/research/g13-leanboot/baseline/.
+  No TV state changed for this revision. Not yet an OS loader. MBOOT's stock
+  assembled ramdisk overlaps the earlier 0x25000000 probe buffer, so do not
+  reuse that address for a kernel handoff. See research/G13_LEAN_BOOTLOADER.txt.
+- G13 LEAN RAM ENTRY VERIFIED (2026-11-01): owner resumed bootloader work
+  in Lean using the ARM DSL from ~/dande-router and allowed vendoring.
+  The then-current code used a scalar Lean core plus ZrAsm entry/MMIO adapter;
+  the 288-byte image printed LEANBOOT RAM on the TV and returned 0 to MBOOT.
+  SCTLR remained 0x00c0181d. Original RAM bytes were restored and verified
+  before normal reset. No bootloader code/init_boot was flashed. The probe
+  is not an OS loader or an installed automatic jump. Build/test and exact
+  live memory/cache/return evidence: research/G13_LEAN_BOOTLOADER.txt.
+  Normal native boot then reached READY at +18.73 s; Ethernet ADB/root,
+  full native manifest and pre/post boot-image hashes passed. Host links
+  were restored. Current boot ID: f912ea2b-a5ea-4cc7-aef4-a4dfff04caae.
+- G13 BOOTLOADER WORK PREVIOUSLY PARKED (2026-11-01): owner chose to retain the installed
+  bootloaders and pursue RAM-only experiments when this work resumes. The
+  proposed first probe prints a UART marker and returns to MBOOT; at that
+  point it had not been built or run. No boot-state change was part of that note-taking
+  task. UART/Fastboot depend on working MBOOT; spare-copy fallback and
+  independent BootROM recovery are unproven. Android slot B is not a full
+  second installation: its dynamic partitions have no extents in the
+  captured layout. See the deferred-experiments section at the end of
+  research/G13_DEVELOPMENT.txt before resuming.
+- G13 MAIN INTEGRATION CHECKED (2026-11-01): committed G13 work is based on
+  owner-refreshed origin/main b47229a; rebase required no replay/conflicts.
+  All four ARM32 QEMU demo gates pass (contract, supervisor, normal tour,
+  TV bridge), as do 667499 Lean policy/ABI cases and 29 Python/Rust tests.
+  G06/G13 app binaries match the earlier compatibility builds byte for byte;
+  both native backends compile and the G13 hidden display probe passes.
+  ARM64/x86_64 Linux and ARM64 macOS package evaluation pass. Intel macOS
+  fails on unchanged upstream too because pinned Nixpkgs dropped support.
+  No G06 hardware rerun, flash or reboot was done for this review. Details:
+  research/G13_DEVELOPMENT.txt; assets/research/g13-main-integration-20261101/.
+- G13 LEAN STARTUP LOGO VERIFIED (2026-11-01): the owner confirmed the white
+  Lean logo on black after the normal reboot. Only MBOOT's warning JPEG at
+  0x2bfa00, length 47903, was replaced over Ethernet ADB (94 sectors, with
+  the trailing 225 bytes preserved). Header, code and signatures remain
+  unchanged. Full pre/post-reboot readbacks match SHA256
+  a342fcdd62b2ce7121d977b9410d2c05aa51757bf7d26d6b445423e97122439b.
+  MBOOT_b/MBOOTBAK remain stock; init_boot_a remains 0ebb78f7...; native
+  startup, .3:5555 ADB, adb root and host proxy setup passed after reboot.
+  The TV remains unlocked/orange, globally Enforcing, ADB secure=1. The
+  preceding TCL artwork trial also booted and was confirmed by the owner.
+  Source: src/pid1/scripts/native-app/lean-boot-logo.svg. Apply/rollback:
+  tools/native-app/g13-unlock-logo.py (lean, tcl, or original warning).
+  See research/G13_UNLOCK_LOGO.txt and the Lean transaction evidence at
+  assets/research/g13-unlock-warning-20261101/apply-20261101T192035747513Z/.
+- G13 ETHERNET ADB VERIFIED (2026-11-01T19:15Z): normal development is
+  Ethernet + UART. Host NetworkManager profile dande-tv assigns .1/24;
+  native G13 startup assigns 192.168.77.3/24 and authenticated ADB :5555.
+  A normal reboot without USB data restored Ethernet ADB and the launcher;
+  adb root and the host YouTube proxy then passed over Ethernet. Boot script
+  waits for netd's rule flush before adding subnet rule 9000. Native init
+  exports ANDROID_NO_USE_FWMARK_CLIENT=1 to avoid root adbd's reproduced
+  netd/su descriptor denial. Global SELinux remains Enforcing, ADB secure=1.
+  No new flash; installed init_boot_a hash remains 0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b.
+  Use `nix develop -c adb connect 192.168.77.3:5555`; restore proxy/replay
+  and clock with `nix develop -c python3 tools/native-app/run-g13.py --network-only`.
+  Current UART owner is user Screen 96550/window0 on ttyUSB1, FTDI AU0563JT;
+  do not open a competing reader. Android fallback has no new static-IP
+  service; USB remains the verified Fastboot recovery path. See
+  research/G13_DEVELOPMENT.txt for the standard, local-change inventory,
+  old-TV compatibility settings and evidence. Both app variants build;
+  G06/G13 native helpers compile, 11 host tests pass, and a new G13 display
+  probe passes. G06 hardware and mains-off wake were not retested.
+  Evidence: assets/research/g13-ethernet-20261101/ and
+  assets/research/g13-compatibility-20261101/.
+- G13 AUTOMATIC NATIVE STARTUP VERIFIED (2026-11-01): the flashed startup
+  image below now selects /metadata/dande-tv/native-entry.rc persistently.
+  Config revision 4 boots tvinit/display/audio automatically with no
+  app_process or system_server. Stock init remains PID 1; native vendor
+  services remain. All 14 audio protocol cases pass without the framework;
+  owner confirmed audible tone and visible launcher after size correction.
+  A subsequent fresh boot produced the correctly sized launcher without
+  intervention. Fixes: reapply the audioserver bind mount's suid flag in the
+  post-fs service namespace, set media.metrics.enabled=0 before audio starts,
+  and use 1280x720 (G13 retains that layer stack even without WindowManager).
+  Config/manifest: assets/research/g13-native-pid1-20261101/config-v4/.
+  Installed init_boot_a SHA256 is still 0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b;
+  no additional flash was needed. Native Power now requests stock init
+  shutdown, retaining the persistent selection. One injected KEY_POWER
+  reached kernel/PM51 Power Down; owner was asked to press Power once to
+  test return from standby. That final physical startup is pending.
+  Read research/G13_NATIVE_BOOT_NOTES.txt before changing boot config.
+- G13 NATIVE-STARTUP IMAGE FLASHED, ANDROID FALLBACK BOOTS (2026-11-01): owner
+  explicitly said "let's flash it". All exact-target Fastboot checks passed;
+  only init_boot_a was flashed with candidate SHA256
+  0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b.
+  Sending, writing and normal reboot returned OKAY. Android fallback remains
+  selected in /metadata/dande-tv/entry.rc, mode disabled. MBOOT then entered
+  standby (UART "Power Down"); after owner pressed Power, serial queries
+  confirmed ro.boot.init_rc=/metadata/dande-tv/entry.rc, boot_completed=1,
+  zygote running, system_server PID 911 and ro.debuggable=1. USB ADB is
+  enumerated but awaiting authorization; owner was asked to allow it with
+  "Always allow". Live partition hash and native boot still need verification.
+  Evidence: assets/research/g13-native-pid1-20261101/flash-test/.
+- G13 FRAMEWORK-FREE WARM TEST / BOOT CANDIDATE (2026-11-01): owner
+  confirmed visible Slides and audible tone with zygote stopped and no
+  system_server; 14 audio protocol cases passed in that state. The bounded
+  test then restored stock audioserver and Android. Native audio requires
+  the standalone shim linked with -z global and injected through DT_NEEDED;
+  the successful RAM bind mount did not write /system. A cold-start candidate
+  is BUILT AND STAGED, NOT FLASHED OR BOOT-TESTED. It retains stock init as
+  PID 1, imports normal native services, and can override zygote/bootanim.
+  /metadata/dande-tv/entry.rc currently selects Android, mode disabled; the
+  working root image remains installed (fresh full-partition SHA matched).
+  Candidate init_boot SHA256 0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b.
+  See research/G13_NATIVE_BOOT_NOTES.txt for exact candidate, authorization
+  boundary, one-shot fallback, limitations, activation and rollback. Never
+  remove metadata config while this candidate is installed. Cold panel/audio
+  initialization and standby/wake remain unverified. UART Screen untouched.
+- G13 TVINIT UNDER ANDROID VERIFIED (2026-11-01): the recovered G13 now
+  runs the native tvinit launcher, Slides, Doom and live YouTube through
+  Android 14 SurfaceFlinger/AAudio. Owner confirmed the physical menu and
+  audible test tone. Slides navigation, Doom gameplay, YouTube playback,
+  pause/resume/seek, and Home cleanup passed. Start with
+  python3 tools/native-app/run-g13.py; --no-build reuses the completed build,
+  --stop removes its processes and USB reverse entries. USB data must stay
+  connected for the host proxy. This is a manual session, not PID-1 boot
+  or autostart; no firmware or global SELinux policy changes were made.
+  G13-only .#g13-apps uses UIDs 19001..19003 (original 10001/10002 cannot
+  create sockets here); staging rejects installed-package UID collisions.
+  Keep the private chroot/root bind, evdev grabs, shell-context media helper,
+  Android-14 libgui ABI and static TCP-to-ADB-abstract-socket relays: each
+  addresses a reproduced platform difference. Android speaker volume was
+  zero, now 30/100; app volume is 0.0075 (25% of its original ceiling).
+  Stop verification showed Android still boot-complete, adb root working,
+  Enforcing globally, and real IR node still 660/root:input. UART Screen
+  remains untouched. See research/G13_TVINIT_NOTES.txt and
+  assets/build/native-app-g13/ for logs, screenshots and binary hashes.
+- G13 ADB ROOT VERIFIED (2026-11-01T08:58Z): owner confirmed
+  restored normal TV operation and explicitly requested rooting again,
+  preferably adb root or su. A minimal debug-ramdisk candidate was built
+  from exact stock init_boot_a: all 22 original entries and stock init are
+  unchanged; only force_debuggable, adb_debug.prop, and a copy of the live
+  platform CIL with two adbd-to-su transition rules plus permissive su were
+  added. Normal domains stay enforcing; ro.adb.secure is not overridden.
+  Stock and modified CIL compiled against current matching policy files.
+  Candidate SHA256 afc34332ba1b0f4b737eecdc512016e94bb3b9c058c920f411ef53c0393a70a4.
+  Exact-target Fastboot checks passed, init_boot_a flash and normal reboot
+  returned OKAY. First reboot entered standby in MBOOT; after the owner
+  pressed Power once, Android booted successfully. adb root now works:
+  uid=0(root), context=u:r:su:s0, boot_completed=1, bootanim stopped, slot _a,
+  AU13. Live full-partition SHA256 of init_boot_a matches the candidate.
+  SELinux is globally Enforcing with only su made permissive; ro.adb.secure=1
+  and ro.secure=1 remain set. ADB is left root on serial 18ACC22D1C47.
+  No su executable was installed. One startup/root test is verified; no
+  second power cycle was performed. Keep UART capture and rollback available.
+  Host ADB had been restored by restarting its stale server; before this
+  flash it confirmed V013/AU13, boot_completed=1 and production-root refusal.
+  Screen 49213.tv-uart remains the sole serial owner on ttyUSB0.
+  See research/G13_ADB_ROOT_NOTES.txt and
+  assets/research/g13-adb-root-20261101/ (root-verification.json,
+  verified-boot.bin/.txt, device-test.json, candidate/).
+- G13 ANDROID BOOT RESTORED (2026-11-01T08:50Z): after the stock restore
+  below, the TV passed through recovery and then started normal Android.
+  Read-only commands through the working serial shell confirmed
+  sys.boot_completed=1, V8-T221T10-LF1V013, slot _a, verifiedbootstate=orange,
+  zygote running and finally bootanim stopped. Owner confirmation of the
+  visible screen is pending. USB ADB remains absent from the host despite
+  on-TV adbd running and sys.usb.config=adb; do not equate that with failed
+  Android boot. No additional reboot or write was performed. Screen is still
+  the sole UART owner and now reaches console:/ $. Current evidence:
+  assets/research/g13-stock-restore-20261101T084914Z/android-serial-properties.json
+  and refreshed post-restore-boot.bin/.txt, restore.json.
+- G13 STOCK INIT_BOOT_A RESTORED (2026-11-01T08:49Z): after owner connected
+  the USB data cable, Fastboot enumerated as 18ACC22D1C47 at usb:1-1.3.
+  Read-only queries confirmed tcl9216, bootloader 01.01.250814, userspace=no,
+  unlocked=yes, secure=no, slot=a, two slots and init_boot_a size 0x00800000.
+  Exact stock init_boot_a.img SHA256 ba21e944050398f71b9d137f4c569e930dd912f94aa50d44392aa94f61dfa0b9
+  was rechecked, then flashed successfully: sending/writing both OKAY;
+  UART confirms 8388608 bytes written. Normal fastboot reboot also succeeded.
+  No other partition was flashed; no unlock, relock, erase or slot change.
+  New boot has no prior init_boot_a AVB hash error and reaches actual Linux
+  recovery userspace (recovery process, recovery HALs, Recovery Boot!!!).
+  A nonempty recovery request remains; normal Android startup is NOT yet
+  confirmed. Owner was asked what the TV displays. ADB/Fastboot are absent
+  after this reboot. Screen 49213.tv-uart remains sole UART owner on ttyUSB0
+  with the same append log. Evidence and exact commands:
+  assets/research/g13-stock-restore-20261101T084914Z/.
+- G13 LIVE BOOTLOADER FASTBOOT (2026-11-01, after 08:42Z checks): the Screen
+  catcher succeeded at 08:41:20Z after two CRs; owner help and subsequent
+  read-only assistant commands worked. Live UARTOnOff=on, project 20046,
+  U-Boot Aug 14 2025. Full-partition CRC32 matches saved Magisk init_boot_a
+  (182a267f), stock init_boot_b (c42e713a), and V013 stock boot_a,
+  vendor_boot_a, dtbo_a, vbmeta_a and vbmeta_system_a. These are CRC matches,
+  not cryptographic readback; the custom hardware sha256 command returned
+  different values from host SHA256 and is not validated for this purpose.
+  Exact MBOOT inspection identified mstar_usb as the USB Fastboot handler.
+  It was invoked and now reports tcl9216 / 18ACC22D1C47 and
+  "fastboot: processing commands ...". Host fastboot devices is still empty;
+  connect the known working TV-to-laptop USB data cable next, keeping TV on.
+  Screen 49213.tv-uart remains sole owner of ttyUSB0, log
+  assets/research/device/screen-uart-20261101T083737Z.log, immediate flush.
+  No catcher remains. No TV partition writes, reset, unlock or slot change
+  were performed in these checks. Stock init_boot_a restore is still pending.
+  Commands, raw responses and comparisons:
+  assets/research/g13-uart-recovery-20261101T084204Z/.
+- SCREEN-BASED PROMPT RETRY ARMED (2026-11-01T08:40:42Z): owner turned the
+  TV off after the successful prompt catch and requested another attempt.
+  Screen 49213.tv-uart still owns ttyUSB0; settings/fd were checked again.
+  research/catch-screen-uart.py now watches only new log bytes from offset
+  23764 and sends only CR via Screen's window 0 after seeing U-Boot, for at
+  most three seconds / 60 bytes. It stops at prompt/kernel/UART-off/powerdown
+  and leaves Screen open. It never opens the serial device. Wait limit 600 s,
+  exec session 89341; events screen-enter-20261101T084042.846642Z.jsonl under
+  assets/research/device/. Screen logfile flushing is now immediate (0).
+  No commands or flashing are queued. Recheck results/liveness before using
+  the session, and preserve the next stopped bootloader rather than rebooting.
+- UART PROMPT REACHED / SCREEN HANDOFF (2026-11-01T08:37Z): the Enter catcher
+  succeeded at 08:36:13Z after exactly two CR bytes. Its 2358-byte log ends
+  with two `<< MT5867 >>#` prompts; the catcher closed cleanly. No bootloader
+  command was sent. Keep the TV powered on to preserve the stopped boot.
+  At the owner's request, Screen 49213.tv-uart now owns /dev/ttyUSB0. Verified
+  115200 8N1, raw, no software/hardware flow control. Attach with sudo and
+  /nix/store/q9k0rlny9cwxc2sba5lripkm66pwmx7b-screen-5.0.2/bin/screen -r tv-uart.
+  New log: assets/research/device/screen-uart-20261101T083737Z.log, flush 1 s.
+  No Python capture remains and no further assistant serial bytes were sent
+  during handoff. Do not open another reader. Firmware restoration is still
+  pending; inspect current state before selecting or writing an image.
+- UART PROMPT CATCH ARMED (2026-11-01T08:34:40Z): old capture PID 46710 was
+  stopped. research/probe-uart-enter.py now exclusively owns FTDI AU0563JT
+  on ttyUSB0, 115200 8N1, exec session 41320. It waits up to 600 seconds for
+  one U-Boot startup and sends only CR for at most three seconds, stopping
+  at a recognized prompt or kernel/powerdown/UART-off marker. No commands
+  or flash operations are queued. At arming no bytes had been sent/received.
+  Logs: assets/research/device/uart-enter-20261101T083440.641154Z.*.
+  Recheck liveness/results before opening any other serial reader. The TV
+  was last reported mains-unplugged; owner is to remove the resistor with
+  mains disconnected and perform a normal startup. Firmware restoration is
+  pending confirmed command reception and current-state inspection.
+- UART ENABLE SUCCEEDED (2026-11-01T08:27Z): the owner's nominal 1 kOhm
+  resistor across the mapped Power-button signal and logic ground worked
+  after placement correction; measured signal was about 0.56 V. Latest
+  captured startup reports key 0x15, Saving
+  Environment to MMC, successful 128-block writes and Opening UART now,
+  then Power Down. Two preceding new startups already bypass UART BUS OFF
+  and reach Linux. They report an init_boot_a AVB hash mismatch but continue
+  because the device is unlocked; this alone does not diagnose the boot
+  failure. Exact placement changes during each startup are not recorded.
+  Owner subsequently unplugged the TV; resistor removal is not yet confirmed.
+  The resistor is no longer needed for the saved setting; remove only with
+  mains disconnected. The first section of research/G13_MAGISK_NOTES.txt
+  records the working arrangement, measurements and evidence.
+  No interactive command reception or firmware restoration is verified yet.
+  Preserve the enabled state; do not repeat enable experiments unnecessarily.
+  Snapshot: assets/research/g13-uart-entry/uart-enabled-20261101T082700Z/.
+  FTDI AU0563JT is now ttyUSB0. The stale Screen session was closed after its
+  device disconnected; Python receive-only capture PID 46710 / exec session
+  85798 started at 08:14:50Z for 1800 seconds, 115200 8N1, no flow control.
+  Log: assets/research/device/uart-20261101T081450.375586Z.bin. Recheck liveness
+  before use, do not open a competing reader. No assistant serial bytes or
+  host TV-partition writes occurred in this trial. See G13_MAGISK_NOTES.txt.
+- SIGNED USB SERVICE IMAGE SEARCH (2026-11-01T04:38Z): no verified exact
+  T221T10 / G13_2K_US / project 20046 service image was found. Official
+  upmptype=4 upgradeConfigInterface and upgradeIncrInterface both return
+  the same V033 AB OTA, not a bootloader service package. A related T221T09
+  V069_USB.zip is publicly accessible on TCL SEMP's Azure storage; its ZIP
+  directory contains USB/upgrade_image.pkg (1753944496 bytes). Only archive
+  ranges/header were inspected; signature, contents and G13 US compatibility
+  are NOT verified. Do not stage or flash it on this TV based on the shared
+  G13 designation. Official SEMP's current V092 download is a T221T09 AB OTA
+  for G13_2K_GB, also not an exact service image. Evidence and source URLs:
+  assets/research/g13-service-image-search-20261101/ and the latest section
+  of research/G13_MAGISK_NOTES.txt. USB contents and Screen were unchanged.
+- CURRENT USB: REAL V033 UPDATE (2026-11-01T04:31Z): owner accepted the
+  proposed official V033 USB update trial with "let's try that". SanDisk
+  03046508112725103421 / UUID 9EDC-3795 retains ordinary RECOVERY label and
+  existing FAT32 partitioning. Its sole file update_signed.zip is now the
+  REAL signed G13/T221T10 V033 A/B OTA, 1379019088 bytes, SHA256
+  e3e51c77cbd1b55ce28c5190e19640d15ba8ba31d424f376b98515e6cd431fb9.
+  Source-stream hash and full USB readback after unmount/cache flush matched;
+  read-only fsck passed. Stick is flushed/unmounted. This update includes
+  mboot and still requires installed recovery; it is not MstarUpgrade.bin.
+  No host TV-partition writes or serial transmission occurred during preparation.
+  PHYSICAL RESULT: owner reports backlight only, no text or blinking LEDs.
+  New serial startups appeared while the owner explicitly left the TV alone,
+  establishing automatic restarts during the attempt. No successful update
+  or recovery entry is confirmed; current installed partition contents remain
+  unreadable. Do not equate this with proof that no OTA writes occurred.
+  See physical-trial.json and serial-observation.jsonl in the same directory.
+  Exact custar also discovers upgrade_image.pkg and related package names,
+  then invokes the authenticated ustar path; renaming the OTA or raw backup
+  is not an established service package. Screen 31845.tv-uart
+  remains unchanged on ttyUSB1, same append log (25126 bytes at preparation).
+  Evidence: assets/research/g13-v033-usb-20261101T043110Z/ready.json.
+  Instructions: research/recovery-probe/G13_CURRENT_USB.txt.
+- PRIOR USB RESEARCH (2026-11-01T04:29Z): continue USB investigation
+  rather than directing the owner back to button-circuit/UART modifications.
+  SanDisk was reconnected and its first 40 MiB captured read-only. Exact V013
+  MBOOT MBR/FAT code successfully read all 22 bytes of /update_signed.zip;
+  a nonexistent filename failed as expected. USB hardware transport is stubbed
+  in that test, so physical detection/recovery startup remain unverified.
+  Fresh official project-20046 query still offers V033. Its whole-file RSA
+  signature verifies against the certificate extracted from V013 vendor_boot
+  recovery; archive CRCs, length, MD5 and SHA256 pass. This is an A/B OTA,
+  includes mboot and other firmware, and still needs installed recovery.
+  Owner was initially asked whether to prepare V033 or continue bootloader-only
+  research; the subsequent authorization and preparation are recorded above.
+  At this research stage the stick still had the empty ZIP. Screen was untouched.
+  Evidence: assets/research/g13-usb-reader-20261101/.
+- PRIOR STOCK-RECOVERY CONTROL (2026-11-01T04:22Z): owner clarified
+  that holding physical Power while connecting mains reliably establishes
+  standby, then holding Power from standby shows the unlock warning without
+  the prepared stick but only backlight with it. Exact V013 AVBPanelLogo
+  calls isBootToRecovery and skips the orange warning when that returns 1.
+  This supports recovery selection as an explanation, but does not prove
+  that Linux/recovery started or identify the failure stage.
+  For a comparison without special-label arguments, the connected SanDisk
+  03046508112725103421 / 9EDC-3795 now has ordinary label RECOVERY and the
+  same sole empty 22-byte update_signed.zip. Only three label fields changed;
+  source code parsing checks, raw FAT audit and read-only fsck passed.
+  This requests stock USB-update recovery, NOT Fastbootd or a firmware repair.
+  An update error is expected if recovery actually processes the empty ZIP.
+  Owner now reports ONLY BACKLIGHT again with this plain-label control.
+  The 04:25Z snapshot adds 4879 bytes/three startups since offset 16172,
+  ending at UART BUS OFF with no prompt; attempts are not individually
+  timestamped and these counts do not establish automatic rebooting.
+  This weakens a special-Fastbootd-argument explanation; the shared recovery
+  boot path remains suspect, not a captured diagnosis. Do not repeat this
+  same label experiment as a new remedy. Screen 31845.tv-uart still owns
+  ttyUSB1 and the same log. USB contents were not changed after this result.
+  Evidence (including physical-trial.json and its serial slice):
+  assets/research/g13-stock-recovery-control-20261101T042241Z/.
+  See research/recovery-probe/G13_CURRENT_USB.txt. Prior preparation below
+  is historical; do not describe this stick as still carrying --fast.
+- PRIOR G13 USB PREPARATION (2026-11-01T04:12Z): at the owner's explicit
+  request to prepare the stick for the NEW TV, SanDisk serial
+  03046508112725103421 / UUID 9EDC-3795 now has the LF,--fast,LF label and
+  exactly one empty 22-byte update_signed.zip. Fresh exact V013 MBOOT and
+  libc emulation selected Fastbootd with this UUID; independent raw FAT audit
+  verified the actual labels, sole file hash, matching FAT/BPB copies and
+  free-cluster count. Flushed and unmounted. This is an installed-Fastbootd
+  entry attempt, not independent recovery or a firmware repair package;
+  previous G13 attempts failed. Owner now reports the same unlock-warning
+  screen on this retry. Log bytes 4879..6413 add one startup ending at UART
+  BUS OFF, with no prompt. Live TV BCB contents remain unreadable; USB trigger
+  detection versus recovery-startup failure is unresolved. The exact V013
+  USB path's BCB command is boot-recovery, with --fast in its recovery args.
+  Trial evidence: physical-trial.json in the same artifact directory. No TV
+  partition or UART session was changed. See
+  research/recovery-probe/G13_CURRENT_USB.txt and
+  assets/research/g13-recovery-usb-20261101T041229Z/ready.json.
+- EMPTY-STICK SERIAL RETRY (2026-11-01T04:09Z): owner reports an "Unsafe"
+  screen and different behavior when attempting recovery with the empty
+  SanDisk. This does not establish Android recovery or Fastbootd entry.
+  Existing Screen session 31845.tv-uart remains the sole serial capture;
+  its log was rotated to assets/research/device/screen-uart-empty-usb-20261101T040907Z.log.
+  Screen's open serial/log descriptors and 115200 8N1, no flow control were
+  verified. No assistant serial bytes were sent. Owner was told capture is
+  ready for another physical attempt. Owner then confirmed "Your device has
+  been unlocked ..." with footer "System will boot up continously". The
+  initial 1534-byte log had one startup ending at UART BUS OFF, no console
+  prompt; the subsequent saved observation had 3068 bytes and two startups.
+  This confirms visible progress beyond UART gating, not recovery
+  entry. Exact avbShowStatus loads a warning JPEG and returns; no explicit
+  button-confirmation wait was identified there. Capture remains running.
+  Observation: assets/research/device/empty-usb-warning-observation-20261101.json.
+- SANDISK NOW EMPTY FAT32 (2026-11-01T04:02Z): owner explicitly requested
+  formatting and leaving the USB stick empty. SanDisk serial
+  03046508112725103421 was reidentified and its existing partition formatted
+  FAT32, label EMPTY, UUID 9EDC-3795. The recovery label and all files on the
+  stick are gone; local firmware backups were not changed. Read-only fsck
+  passed, a read-only mount confirmed zero files/directories, and the stick
+  was flushed and unmounted. Evidence:
+  assets/research/usb-empty-20261101T040253Z/. The preparation below is historical.
+- SANDISK RECOVERY-ENTRY STICK PREPARED (2026-11-01T03:28Z, side conversation):
+  owner authorized preparing the connected SanDisk serial 03046508112725103421,
+  UUID 0331-904C, because the PNY is unavailable. Its existing FAT32 filesystem
+  and V109 backup files were preserved. Only the primary BPB, backup BPB and
+  root-directory volume labels changed from TVBACKUP to LF,--fast,LF,spaces;
+  24 byte differences across three sectors were backed up and readback verified.
+  Existing update_signed.zip and V8-T221T10-LF1V013.zip are both empty 22-byte
+  ZIPs, not firmware. Exact V013 label/BCB and getopt emulation selects Fastbootd
+  with the SanDisk UUID. Physical G13 recovery is still unproven. The stick was
+  left flushed and unmounted; the existing Screen session was not modified.
+  Evidence: assets/research/sandisk-recovery-20261101T032736Z/.
+  See research/recovery-probe/SANDISK_FASTBOOT_ENTRY.txt. It is no longer an
+  ordinary TVBACKUP-labelled storage stick; do not flash its G06/V109 images
+  onto this G13 TV. No TV partitions were written during this preparation.
+- G13 BOARD PHOTOS (2026-11-01 UTC): owner photos show TPD.MT9221T.PB771 (T),
+  40-MT21TB-MPC2HG. KEY / GLK1 is directly on the main board beside red SPK_R
+  and the panel ribbon, not on a separate button board. Its actual contact
+  pair, SAR connection and pull-up must be mapped before a resistor test.
+  CK1 is labelled EXT-BT; CNB2/PWRUP is labelled GND/12V. Neither is an
+  identified UART header. The same PCB contains an outlined HOT mains PSU
+  section; keep continuity work confined to the unpowered logic/button area.
+  Exact-revision schematic not found. Photos/provenance are in
+  assets/research/g13-board-photos-20261101/; analysis is appended to
+  research/G13_MAGISK_NOTES.txt. No TV state or serial ownership changed.
+- G13 UART-ENABLE CANDIDATE (2026-11-01 UTC): exact V013 MBOOT maps physical
+  keypad code 0x15 to mode 12, executing setenv UARTOnOff on and saveenv.
+  It does not reconnect the hardware mux immediately; effect is expected on
+  a later startup. This is a button-circuit code, not a UART character or IR
+  command. The compiled SAR0 keypad table includes 0x15; offline execution
+  of the exact ARM decoder maps ADC 30..60 to it. Saved MPOOL environments
+  lack keypad_select/offset/size, supporting this table as the startup
+  candidate; current runtime mapping and hardware trigger are unverified.
+  The owner confirms a single push button. Identify the button-board circuit
+  before specifying any resistor or voltage; no wiring change was performed.
+  The board-na.ini mapping alone is not proof of early MBOOT's mapping.
+  Exact dynamic IR dispatcher has no UART-on mode. See the latest section of
+  research/G13_MAGISK_NOTES.txt and assets/research/g13-uart-entry/.
+  Screen remains the serial owner; no new automated transmission occurred.
+- INTERACTIVE UART HANDOFF (2026-11-01T01:25Z): at the owner's request,
+  a root-owned GNU Screen session was created at 115200 8N1, software/hardware
+  flow control off. After the later adapter reconnection on November 1 UTC,
+  the old session was absent; new session 31845.tv-uart now holds ttyUSB1
+  with those settings verified. The Python capture is no longer running.
+  Screen was left detached for the owner to attach; do not start a competing
+  serial reader. Initial log: assets/research/device/screen-uart-20261101-interactive.log;
+  the restarted session uses a new timestamped screen-uart-*.log in that directory.
+  The proposed repeat automated Enter test was not run; no new UART bytes
+  were intentionally transmitted by the assistant during this handoff.
+- G13 UART RECEPTION RESTORED (2026-11-01T01:16Z): the same FTDI adapter
+  AU0563JT is visible again as ttyUSB0. A new 115200 8N1 receive-only capture
+  started at 01:13:43Z for 600 seconds. At 01:16:11Z its 1550 bytes included
+  a readable startup through U-Boot 2011.06, eMMC HS400 / 7.28 GB and DRAM
+  1024MB, ending at UART BUS OFF as before. No bytes were transmitted.
+  Raw capture: assets/research/device/uart-20261101T011343.510406Z.bin.
+  This supersedes the later silent-reception observations below; interactive
+  input and Android startup remain unverified. RX/GND-only wiring was
+  requested, but the owner's final repaired pin mapping is not yet recorded.
+  The owner subsequently clarified that adapter TX is connected and the other
+  assignments are uncertain. A reported TX-to-GND measurement was 0 V;
+  whether TX was isolated from the TV and the adapter USB-powered is awaiting
+  clarification. Do not treat that reading as a verified signal voltage.
+  The owner later explicitly reported testing the UART cable and confirmed it
+  works. Accept that result for subsequent work and focus on the TV's receive
+  routing and firmware gating rather than repeating adapter validation.
+- G13 UART RECEIVE CONFIRMED (2026-10-31T22:11Z): FTDI FT232R adapter
+  0403:6001, USB description DCSD USB UART, serial AU0563JT, ttyUSB0.
+  Receive-only capture at 115200 8N1 obtained readable early boot and
+  U-Boot 2011.06 (Aug 14 2025 - 23:40:21), reporting DRAM 1024MB and eMMC
+  HS400. Output ends at `UART BUS OFF!!`; exact V013 MBOOT checks
+  UARTOnOff=off, prints this message and disables the UART bus. This does
+  NOT establish that execution stops there. The completed five-minute
+  receive-only capture contains five startup sequences (7671 bytes);
+  automatic versus manual restart is awaiting owner confirmation.
+  Raw capture: assets/research/device/uart-20261031T221106.448038Z.bin.
+  TV-to-laptop reception is demonstrated; adapter TX, signal voltage and
+  exact HDMI pinout were not independently validated. See the latest UART
+  section of research/G13_MAGISK_NOTES.txt. Older "UART unavailable"
+  observations below describe the earlier recovery attempts.
+- G13 UART ENTER TEST (2026-10-31T22:18:36Z to 22:20:11Z): a bounded
+  startup-triggered test sent 216 carriage returns and no commands. No prompt
+  appeared. Transmitted CR bytes were echoed back, with boot-log corruption
+  during transmission; the following receive-only startup was readable again.
+  This suggests wiring/loopback or signal contention, not confirmed TV command
+  reception. All transmission has stopped and the port is closed. Confirm
+  the owner's wire-to-pin assignments and adapter TX identity before further
+  serial transmission. Logs: assets/research/device/uart-enter-20261031T221836.592197Z.*.
+  Stock init_boot_a was freshly hash-verified; restoration is still pending
+  a working control interface. Do not issue blind console writes.
+- OWNER UART WIRING CLARIFICATION (2026-10-31): owner thinks HDMI pin 14
+  goes to adapter RX, pin 2 to TX, and pin 11 to GND, through a CUT HDMI
+  CABLE. This is a reported assignment, not a measured continuity map.
+  Readable output establishes reception with a usable ground reference;
+  it does not establish pin 2 isolation or working TV RX. Pin 2 is a shield
+  in standard HDMI wiring and may be bonded to other grounds in the cable.
+  Verify cable continuity with both ends disconnected, or use an individually
+  wired breakout, before further transmit tests. Pin 17 is DDC/CEC ground;
+  pin 11 is the clock shield. Do not assume changing ground alone fixes input.
+  The owner subsequently reported neither pin 2-to-11 nor pin 2-to-14 was
+  shorted with the cable isolated. This rules out those reported cable shorts,
+  but does not validate the TV RX assignment or explain the earlier echoes.
+  A later receive-only recheck at 22:32Z obtained only two NUL bytes; the
+  22:34:58Z capture contained 14 non-text bytes at 22:38:28Z, with no startup
+  text despite an owner-confirmed mains disconnect/reconnect. The FTDI adapter
+  remained enumerated. The next requested test removes adapter TX entirely
+  and repeats reception with RX/GND only; its physical execution and outcome
+  are pending. Do not assume the earlier readable UART state is current.
+- LATEST G13 BOOT EXPERIMENT (2026-10-31T19:28Z, side conversation): owner
+  authorized Magisk root. Official Magisk 31.1 patched an exact V013 copy of
+  init_boot_a on the TV; only init_boot_a was flashed, followed by normal
+  reboot. Fastboot sending/writing/reboot returned OKAY. Android has not yet
+  returned over USB; owner reports black screen/standby. ROOT IS NOT VERIFIED.
+  Stock init_boot_a remains intact in assets/backups/g13-v013-stock-20261031/.
+  Prioritize restoring that image if bootloader USB becomes reachable. Do not
+  flash more experimental images or assume the earlier boot_completed state
+  is current. See research/G13_MAGISK_NOTES.txt and
+  assets/research/g13-magisk-v31.1-20261031/ for hashes and command evidence.
+  The owner subsequently observed the unlock-warning screen persisting after
+  Power. No failure log or root cause has been captured. At 19:34Z, with fresh
+  explicit erase permission and no content backup requested, PNY serial
+  07210C69972A5005 was reformatted FAT32 and restored as a recovery-entry stick
+  (UUID 6ECB-21F4, newline/--fast label, one empty update_signed.zip). It is
+  no longer the TVBACKUP storage mentioned in older notes. Exact V013 MBOOT
+  label/BCB code was emulated successfully, but the owner's first physical
+  G13 attempt did not show Fastbootd. After reconnecting the USB cable the
+  screen had backlight only, standby LED off, and neither ADB nor Fastboot
+  enumerated. UART remains unavailable. A full mains-disconnect retry also
+  failed; the owner described backlight becoming steadily lit, with no menu.
+  A single remote Down/Down/OK test after checking both menu orders also had
+  no effect. The returned PNY stick passed a read-only raw FAT audit; its
+  three patched sectors exactly match the preparation record. Exact V013
+  libc getopt_long emulation recognizes --fast in recovery main's option
+  table; unknown arguments do not abort that main loop. At 19:58Z, ONLY the
+  three label fields were switched to newline/--show/newline (hex
+  0a2d2d73686f770a202020) to request ordinary recovery text instead of
+  Fastbootd. Exact V013 label/BCB and libc parser emulation passed; subsequent
+  read-only disk/file audit passed. Empty ZIP, partitioning and UUID are
+  unchanged. The owner then reported the same failure with this plain-recovery
+  variant. Neither USB nor ADB at 192.168.77.2:5555 is currently reachable.
+  The laptop kernel USB log inspected at 20:06Z showed no TV reconnection
+  since the post-flash reboot; subsequent connections were the PNY stick.
+  Both label variants have now failed physically; do not repeat blind remote
+  selections or treat offline parser validation as successful recovery entry.
+  At 20:22Z, ADB/Fastboot were still absent and the preceding 15 minutes of
+  laptop kernel logs had no USB events. The owner clarified that connecting
+  mains alone immediately lights the backlight, without pressing Power, and
+  this also occurs with all USB disconnected. The unlock warning no longer
+  appears. This does not establish the current boot mode or failure stage.
+  The owner subsequently held physical Power until the backlight went off
+  and the LED came on, released the button, and confirmed that this state
+  persists. A stable standby state is now available for one controlled
+  recovery-stick entry attempt without disconnecting mains; result pending.
+  See research/G13_MAGISK_NOTES.txt and
+  recovery-usb/ inside the Magisk artifact directory.
+- G06 CONNECTION DETAILS (recorded 2026-10-31T20:12Z): the ORIGINAL G06 unit, over
+  Ethernet from the Mac laptop. ALWAYS confirm identity first: both TVs have
+  used 192.168.77.2:5555. Live readback: ro.product.device=G06,
+  ro.software.version_id=V8-T221T04-LF1V109, Android 11 ARM32, kernel
+  4.19.116+, bootloader 01.01.250118, serial 4C0490290FA05A0C0,
+  unlocked/orange, boot_completed=1, SELinux Enforcing, ADB uid2000.
+  CPU: 4x Cortex-A55 (part 0xd05) in AArch32 with aes/pmull/sha2/crc32;
+  MemTotal 1463160 kB. Host side: USB LAN dongle en8 (RTL8153), service
+  "USB 10/100/1000 LAN", manual 192.168.77.1/24 with NO router (Wi-Fi keeps
+  the default route). The TV expects the host at .1; with any other host
+  address the link flapped every ~13 s. Before connecting, check that
+  `route -n get 192.168.77.2` shows en8, or traffic leaks out Wi-Fi.
+  adb: android-tools 37.0.0 is in the owner's nix profile (~/.nix-profile/bin/
+  adb); agents share the owner's adb server on :5037, so never kill-server or
+  disconnect without asking. This laptop's
+  key (MD5 82:2A:3D:...:CC:42) was authorized on the TV at 20:12:24Z.
+  Network ADB comes from service.adb.tcp.port=5555 (non-persist).
+  Evidence: assets/research/g06-ethernet-reconnect-20261031T2012Z/.
+  Platform-capability survey (panel 720p, codecs, what a static armv7 Rust
+  binary can reach from adb shell): research/g06-platform-capabilities.md.
+  Bottom-up track handoff (open probes, agent1's platform API v0, state left
+  behind): research/agent2-handoff-20261031.md.
+- MODIFIED BOOT PROOF (2026-10-31): the owner flashed `./flash.sh .#poc-boot`.
+  Fastboot sending/writing/reboot all returned OKAY. The TV appeared to remain
+  in standby until the owner pressed Power, then booted normally. Live USB ADB
+  serial 4C0490290FA05A0C0 confirmed V109/G06, sys.boot_completed=1,
+  ro.boot.codex_poc=1, orange and SELinux Enforcing. The image changes only the
+  header command line and unsigned embedded boot hash (56 bytes), SHA256
+  55efcfea3249ec31624383e4d15c3bb8bdcff9949a6be1b74f371de5ebde0a93.
+  No independent post-flash partition hash was captured. Evidence:
+  assets/research/boot-poc/live-verification/android-state.txt. Root factory
+  registration/RAM readback preparation also worked after this reboot.
+  A separate silent Doom PID-1 image is prepared under doom/ (`nix build
+  .#doom-boot`). Its packaged ramdisk passed gameplay/input/quit checks in
+  ARM32 QEMU with no sound or network devices. The owner subsequently
+  flashed it successfully, but the TV displayed the unlocked warning then
+  black; Power returned to the warning. The Mac currently sees no TV USB
+  device or Ethernet link. Doom/PID-1 startup is NOT verified on hardware.
+  Current flashed image SHA256:
+  0b49b8166b0ecc53a6cd05d0729b6fc76cd1286d97181a5d7524e070a2dda6e6.
+  This image has no ADB/network service. Recovery to stock boot is pending;
+  a local 64 MiB FAT32 trigger image is prepared under
+  assets/research/recovery-probe/g06-fastboot-recovery.img, not yet written
+  to a physical stick. It uses the previously proven label/empty-ZIP method,
+  but this new filesystem image itself has not been hardware-validated.
+  Read doom/README.txt before trying it; vendor display init and recovery
+  without Android remain hardware gates.
+- RECOVERY COMPLETED (2026-10-31, after the Doom attempt): the PNY stick's
+  primary/backup FAT labels were actually `\n--show\n   `, not the working
+  `\n--fast\n   ` trigger. The full-version ZIP filename was also missing.
+  Both 22-byte empty ZIP names now exist. The owner ran the guarded macOS
+  label repair; all three label fields were patched and sectors read back
+  correctly. Backup: assets/research/recovery-probe/usb-backup/
+  macos-fastboot-label-20261031T220952.500610Z.json. Fastbootd then appeared;
+  remote Reboot to bootloader, swap stick for data cable, and stock boot
+  restore succeeded. Live USB ADB reconfirmed original G06/V109, serial
+  4C0490290FA05A0C0, sys.boot_completed=1, marker absent, SELinux Enforcing.
+  Stock Android is CURRENTLY restored. No independent post-restore boot
+  hash was captured. No Doom-stage logs survived: CONFIG_PSTORE is disabled,
+  /sys/fs/pstore and /proc/last_kmsg are absent. Do not repeat an isolated
+  PID-1 flash without reachable diagnostics and a tested recovery path.
+- HELLO DISPLAY/DEBUG LOOP (2026-10-31): owner selected stock startup/ADB
+  retention. `./hello.sh --seconds 30` runs a shell-owned SurfaceFlinger
+  layer via app_process32, without root, APK install, firmware flash or
+  startup/policy changes. A TV screenshot shows Hello world; independent
+  ADB worked while visible, and both timeout and `./hello.sh --stop` removed
+  the helper/layer while stock Android stayed boot-complete. On the 60-second
+  rerun at 2026-10-31T22:23:24Z, the owner confirmed seeing Hello world on
+  the physical panel, while the independent ADB check also passed. Evidence:
+  assets/research/hello/20261031T222119.029583Z/ and
+  assets/research/hello/20261031T222324.451726Z/ and
+  assets/research/hello/stop-check/. See hello/README.txt. This proves the
+  Android compositor path, not cold hardware init or direct fbdev access.
+- A DIFFERENT TV was connected earlier (2026-10-31): owner-reported label 31Q3K,
+  G13_2K_US / MT9221-Lite, Android 14, V8-T221T10-LF1V013, bootloader
+  01.01.250814, project 20046. The same ADB address was reused. Before the
+  owner's manual reboot to bootloader, this unit was locked/green with
+  boot_completed=1 and sys.oem_unlock_allowed=0. Its A/B layout includes
+  init_boot and vendor_boot, with no
+  dedicated recovery partition. Do not reuse G06 images or assume the older
+  unlock implementation applies. See research/new-tv-20261031T183329Z/.
+  The installed G13/V013 firmware backup after unlocking is now complete.
+  Bootloader USB now works as 18d1:4ee7; current path usb:1-1.1 must be
+  re-identified each session. On the owner's explicit authorization, ordinary
+  flashing unlock succeeded at 2026-10-31T18:42:20Z. Immediate read-only queries
+  confirmed unlocked:yes, secure:no, current-slot:a. A normal fastboot reboot
+  succeeded next; no intervening reboot bootloader was issued. The owner then
+  confirmed the Google TV setup screen, establishing successful normal startup
+  after the unlock/reset. Authorized USB ADB is now working with serial
+  18ACC22D1C47; Android confirms unlocked/orange, boot_completed=1, V013/AU13.
+  ADB is uid2000 and SELinux Enforcing. DO NOT repeat unlock. Evidence:
+  assets/research/new-tv-20261031T183329Z/
+  unlock-attempt-20261031T184216Z/.
+  Its cache is only 5 MiB: NEVER flash the old 100 MiB cache-menu image.
+  TCL's production updater offered T221T10 V033 for project 20046/current V013.
+  The complete ZIP is under assets/research/firmware/V8-T221T10-LF1V033, with size
+  and MD5 verified. Its extracted bootloader retains the ordinary unlock and
+  pending-recovery-wipe flow; the installed V013 unlock is now confirmed by
+  Fastboot state readback. A newer OTA is not an exact V013 backup or proven
+  recovery. Detailed evidence and
+  limits: research/new-tv-20261031T183329Z/FINDINGS.txt.
+- G13 stock readback now works through the MediaTek factory HIDL read_file_byte
+  API from a temporary targetSdk32 APK in untrusted_app_32. This firmware's
+  vendor policy explicitly grants that domain factory HAL find/call access;
+  shell lacks it. The HAL reads as uid0, but no arbitrary root shell or SELinux
+  change was used. Source/helper/client: research/g13-readback/. USB ADB forwards
+  a temporary authenticated abstract socket; data goes directly to the laptop.
+  Full backup completed at 2026-10-31T19:10:54Z under
+  assets/backups/g13-v013-stock-20261031: 53 images, 3359 MiB (3522166784 bytes).
+  All 146 chunks matched second source reads, and an additional full host read
+  verified chunk/full-image hashes, source coverage, sizes and mode0400.
+  See manifest.json, SHA256SUMS and host-verification.json; all images verified.
+  Includes all 50 non-userdata physical partitions, both hardware boot areas
+  and the 2 MiB eMMC head. Userdata/RPMB are excluded; restores are untested.
+  The native reader preserves 64-bit offsets through fseeko64. Read
+  research/G13_READBACK_NOTES.txt before reproducing; one dumper only.
+  The temporary local.tvreadback helper was uninstalled after verification;
+  no ADB forwards remain. Final Android state is V013/AU13, unlocked/orange,
+  boot_completed=1, slot a, SELinux Enforcing. Evidence: helper-cleanup.json
+  inside the backup. Keep originals mode0400 and patch separate copies.
+- The ORIGINAL TV was V8-T221T04-LF1V109.000732, bootloader 01.01.250118. V122 files
+  under assets/research/firmware are newer analysis references, not stock V109 backups.
+- Do not repeat unlock on an already-unlocked TV. After any future unlock,
+  preserve its pending recovery wipe and finish that wipe before further boot
+  mode experiments. Our extra `reboot bootloader` persistence check likely
+  diverted that wipe and caused the startup failure; V109 root cause was not
+  conclusively captured. Use read-only state queries for the immediate check.
+- Proven recovery: crafted-label FAT32 stick -> Fastbootd -> remote Reboot to
+  bootloader -> validated cache image containing only `--show_text` -> reboot
+  recovery -> stock factory reset. Full details, prerequisites, hashes and
+  effects are in RECOVERY_NOTES.txt. Cache writes replace cache/log contents.
+  The PNY stick was later archived and reformatted as ordinary FAT32 TVBACKUP
+  (UUID 0B6D-E4EC) for backup storage; it is no longer the active trigger stick.
+  Its original full image is in assets/backups/usb-fastboot-trigger-20261031T054144Z.
+  See assets/research/usb-export for the USB copy manifest and verification record.
+- `nix build .#stock-plus-root` now prepares an experimental stock-based
+  Magisk v28.1 image with unattended su for ADB UID 2000, ADB-only root access,
+  stock kernel/DTB/cmdline/fstab/AVB keys preserved, verity/encryption retained.
+  The owner flashed it; Android boot and ADB su root passed, including live
+  agent verification at 2026-10-31T23:29:57Z. Evidence:
+  assets/research/stock-plus-root/live/20261031T232957.074635Z/. Standard Magisk root-domain and
+  policy changes are broad; global Enforcing remains expected. It creates
+  /data/adb state on boot, which a later stock reflash does not remove.
+  Official tools recognized/restored the prepared ramdisk and patched only a
+  copied stock policy file successfully. No live policy load or boot-state
+  change occurred. See root/README.txt; after an eventual flash, use
+  `python3 root/verify.py` for read-only root/memory-map checks. If the manager
+  stub loops on its full-app upgrade prompt, `adb -s 4C0490290FA05A0C0 shell
+  am force-stop com.topjohnwu.magisk` resolved it while retaining verified root;
+  no full-manager download/install was needed. kexec loading
+  and actual RAM handoff remain unverified; do not treat this as proven yet.
+- `nix build .#stock-plus-loader` prepares the one-shot cold-boot alternative.
+  Default restores Magiskinit to /init and starts Android; an explicit root-only
+  /cache/tv-launcher/request selects Hello PID1 only after durable deletion and
+  absent readback. Cache p29 geometry/serial/build guards; no raw partition
+  writes by launcher. Exact stock kernel/packed DTB retained. 21 QEMU cases
+  passed, including native control, failure paths and official Magisk cpio
+  restoration. QEMU Android/Magisk programs were stand-ins; actual DEFAULT
+  Android/root now passed hardware at2026-11-01T01:15Z after owner flash and
+  remote Power from standby. Live boot hash and launcher marker matched.
+  root/verify.py passed. Matching /data/local/tmp/tv-launcherctl installed;
+  --inspect reports no pending request. Hello/cache-consume NOT tested on TV.
+  Evidence: assets/research/launcher-live/20261101T011508.242200Z/.
+  Canonical prepared boot SHA548bdde9954c4b97de301a956e24f0976d2a82c2f69659c3d656bb64d5e0ce6b.
+  Read-only TV check at2026-11-01T00:08Z found no request directory/file and
+  boot_completed=1/rootready=1. No launcher flash, arming or reboot performed.
+  See launcher/README.txt; preserve the recovery stick. The owner is away;
+  further tests were deferred until return. Owner has since returned and
+  performed the default flash described above; no experiment has been armed.
+- Hardware kexec load/unload is now proven (2026-10-31T23:33Z and later):
+  stock Image + Hello initramfs, entry 0x20208000, flag 0->1->0, Android live.
+  Actual RAM execution failed twice: Hello/SMP and known Android/single CPU.
+  Both reset automatically into the installed Android image with kernel_panic;
+  Android trial marker was absent in the second case. No boot partition was
+  written and no USB recovery was needed. TV remains Android/root ready.
+  See research/g06-ram-boot-status.md and assets/research/kexec/ram-boot/.
+  root/kexec.py defaults to load/unload; --execute changes boot state. Do not
+  describe the RAM handoff as working. No persistent panic trace/netconsole
+  is available; outgoing-kernel vs new-kernel panic remains unresolved.
+  A CPU hotplug check restored all four cores. kptr_restrict was restored to 2
+  after privileged symbol readback. Magisk ADB logging was disabled live to
+  stop the manager prompt; the updated recipe provisions logging=0, but the
+  currently installed older boot image can reset it to 1 on restart.
+  A 64-byte reset-only RAM discriminator is prepared (root/reset-probe.S),
+  exact kernel/MBOOT constants and four MMIO writes verified offline/Unicorn;
+  NOT loaded/executed on TV. See research/g06-ram-boot-status.md. No kexec cause
+  has been established. Stock reboot notifier may itself write boot-poweron
+  to misc; our scripts do not directly write BCB, but do not claim unchanged BCB.
+- Native Hello PID-1 test is built under pid1/. `nix build .#hello-pid1-kit`
+  produces a RAM-boot kit; `.#hello-pid1-boot` is the separately authorized
+  direct-flash experiment. QEMU covers diagnostics, deliberate display failure,
+  and reboot requests; G06 hardware startup is NOT verified. No ADB is included.
+  Ethernet GET /status, GET /logs and POST /reboot use .2:8765, restricted to
+  host .1. POST /exec stages a static ARM32 native program in RAM and replaces
+  PID 1 without reboot; two successive uploads passed QEMU, hardware untested.
+  Replacement programs must supply their own diagnostics/timer. Build the kit
+  and use `python3 pid1/watch.py --exec assets/build/hello-pid1/result/init`.
+  `python3 pid1/watch.py` captures through en8. Flash flavor requests
+  RESTART2 bootloader after 90 seconds; TV handling is unverified, so keep the
+  working recovery stick available. It does not restore stock automatically.
+  Stock-service kexec loading is blocked by SELinux proc_iomem access; native
+  tmpfs execution and relabeling also failed. No global enforcement change,
+  replacement kernel load, or partition write was performed in those probes.
+  Do not enable persist.tcl.kdump.enable: its init action can change persistent
+  boot arguments. See pid1/README.txt and research/g06-ram-boot-status.md.
+- Fastbootd UI alone did not establish USB transport. Bootloader USB worked
+  as 0e8d:5000; select the current path from `fastboot devices -l`, since its
+  serial text was garbled. A black bootloader screen can be normal.
+- Keep the working recovery artifacts and obtain exact stock-image backups
+  before experimental boot/bootloader writes. Do not substitute another model's
+  patched boot image or relock as a troubleshooting measure.
+- Stock-service root/readback is now demonstrated on V109. Read
+  research/ROOT_READBACK_NOTES.txt before trying another route. A helper using
+  the stock factory token and process name can invoke uid0 commands in
+  tcl_sitatvservice; SELinux still applies. Raw mmcblk0 offset reads work even
+  though direct boot/recovery partition-node reads are denied. No update or
+  patched boot is needed for this backup route. Run only one dumper at a time.
+  The guide contains exact build/registration/proof/readback commands. The TV
+  was already unlocked; locked-device behavior and reuse after reboot remain
+  untested. Do not interpret this result as requiring another unlock.
+- Last confirmed ORIGINAL G06 unit state: normal boot restored and authorized ADB worked at
+  192.168.77.2:5555. Post-reset Android reports vbmeta.device_state=unlocked,
+  verifiedbootstate=orange, sys.boot_completed=1. ADB is uid 2000 (shell);
+  root command execution via the stock service is confirmed. See
+  assets/research/factory-authorized-probe/stdout-identity-logcat.txt. Backups are under
+  assets/backups/v109-stock-20261031: all 33 images (4522 MiB) completed and matched
+  both a second source read and a fresh host hash. See manifest.json and
+  host-verification.json. Keep mode0400 originals intact; patch separate copies.
+  Userdata/RPMB are excluded, and restores have not been tested.
+  Update these observations when new live evidence is obtained.

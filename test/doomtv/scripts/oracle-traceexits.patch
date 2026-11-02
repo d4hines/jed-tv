@@ -1,0 +1,54 @@
+--- a/src/doom/g_game.c	2026-11-01 01:18:19
++++ b/src/doom/g_game.c	2026-11-01 01:18:19
+@@ -903,6 +903,43 @@
+  
+  
+  
++// Trace harness test hook: "-traceexits TIC:KIND,..." forces G_ExitLevel
++// (KIND n) or G_SecretExitLevel (KIND s) at the end of G_Ticker on that
++// gametic. Inert without the parameter.
++static void TraceForcedExits(void)
++{
++    static int parsed = 0;
++    static int tics[64];
++    static char kinds[64];
++    static int count = 0;
++    int i;
++
++    if (!parsed)
++    {
++        int p = M_CheckParmWithArgs("-traceexits", 1);
++        parsed = 1;
++        if (p)
++        {
++            char *s = myargv[p + 1];
++            while (*s && count < 64)
++            {
++                tics[count] = (int) strtol(s, &s, 10);
++                kinds[count] = (*s == ':') ? s[1] : 'n';
++                while (*s && *s != ',') s++;
++                if (*s == ',') s++;
++                count++;
++            }
++        }
++    }
++    for (i = 0; i < count; i++)
++    {
++        if (tics[i] == gametic)
++        {
++            if (kinds[i] == 's') G_SecretExitLevel(); else G_ExitLevel();
++        }
++    }
++}
++
+ //
+ // G_Ticker
+ // Make ticcmd_ts for the players.
+@@ -1078,6 +1115,7 @@
+ 	D_PageTicker (); 
+ 	break;
+     }        
++    TraceForcedExits();
+ } 
+  
+  

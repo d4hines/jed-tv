@@ -1,0 +1,100 @@
+Lean audio driver: design
+=========================
+Branch lean-audio. Owner approved 2026-11-01: Lean owns the audio driver's
+logic, Rust keeps the raw ioctls. Proofs come after the driver works; the
+three properties to prove are listed at the end.
+
+Today
+-----
+src/audio (Rust crate g06-audio, linked into PID1, served on 127.0.0.1:8877):
+  pcm-converter.rs  44.1k/48k mono/stereo -> 48k stereo, exact rational phase
+  protocol.rs       O/W/D/R/F socket protocol, gain = clamp(s*boost)*level
+  direct-backend.rs single-owner lease, open sequence, write loop, cleanup order
+  mi-pcm.rs         MI PCM ioctl wire structs and ownership
+  aout-route.rs     AOUT graph attach/restore, speaker volume takeover
+Unit tests: test/unit/audio/*.rs (60 cases over a mock Transport).
+
+Boundary
+--------
+Lean owns every decision:
+  protocol parsing and replies; format validation; gain scaling; resampling;
+  when to acquire/release/poison the single-owner lease; the open sequence
+  (lease -> PCM open -> speaker lookup -> route attach with verify and
+  rollback -> volume takeover with verify and rollback -> PCM start); the
+  write loop (5 s deadline, 1920-byte chunks, 2 ms back-off on a zero write);
+  played-frame bookkeeping; the flush loop (5 s, 5 ms polls); the cleanup
+  sequence (volume restore -> route restore -> PCM stop and close), including
+  poisoning and the retained-PCM rule when a route cannot be restored.
+Rust owns only mechanisms:
+  TCP listener, accept, 4-client cap, one thread per connection, socket
+  timeouts; the gain file; the monotonic clock and sleep; the lease atomic;
+  the /dev/mik/pcm and /dev/mik/aout files; the #[repr(C)] wire structs and
+  one function per MI ioctl. No Rust decides anything beyond "this ioctl
+  returned status N" or "this socket read returned these bytes".
+
+Lean modules (src/lean/TV/Audio/, Lean 4.35.0, core only, prelude style)
+------------------------------------------------------------------------
+Gain.lean      scale (boost gain : UInt32) (sample : Int16) : Int16
+               Integer arithmetic on magnitudes:
+                 min(|s| * boost, 32767) * min(gain, 300000) / 1000000,
+               sign restored. Gain unit is millionths of full scale, the same
+               unit as TV/Volume.lean. Maximum output is 9830.
+Resample.lean  Converter state (rate, channels, phase, previous frame);
+               convert : State -> ByteArray -> Except Fault (State x ByteArray)
+               (input: little-endian signed 16-bit interleaved; output: 48 kHz
+               stereo, same encoding); consumedInputFrames.
+Protocol.lean  Command decoding and the reply for each command (O/W/D/R/F,
+               status 0 / -1 / -22). Pure.
+Session.lean   structure Effects (m) with one field per mechanism; the open
+               sequence, write loop, flush, cleanup, and the per-connection
+               loop, written once over any monad m.
+Native.lean    The IO instance of Effects via @[extern], and
+               @[export tv_audio_client], which Rust calls once per
+               connection on that connection's thread. Scalar externs return
+               packed UInt64 (low byte tag, high 32 bits value), as
+               TV/Volume/Native.lean does; sample data crosses as ByteArray.
+
+Rust changes
+------------
+Delete: src/audio/pcm-converter.rs, src/audio/direct-backend.rs, the client
+loop and gain thread in src/audio/protocol.rs, and the unit tests for them.
+Reduce src/audio/mi-pcm.rs and src/audio/aout-route.rs to wire structs plus
+one function per ioctl: no ownership, no Drop, no retry, no rollback. Keep
+their layout tests.
+Add src/pid1/src/audio_service.rs (modelled on volume_control.rs): listener,
+per-connection thread with lean_runtime::ThreadGuard::attach(), and the
+extern functions Native.lean declares.
+tools/pid1/build.rs compiles the new modules; TV/Pid1.lean imports
+TV.Audio.Native. direct_services::start_audio calls audio_service::start.
+The socket ABI is byte-identical, so Doom and ytplay are untouched.
+
+Behaviour change
+----------------
+Gain scaling moves from f32 with round() to integer with truncation toward
+zero. Output can differ from today's by one LSB. The ceiling is unchanged:
+the largest possible output sample is 9830 = floor(32767 * 0.3). Float cannot
+be reasoned about in Lean and Volume.lean is already integer.
+
+Testing
+-------
+test/lean/tv/audio/Check.lean: a mock Effects over StateM that records every
+ioctl in order and can inject each failure (open, start, attach, partial
+attach, detach, close, gain set, gain restore, write, queue). The 60 Rust
+cases are ported by name; the resampler's bit-exact, mono duplication, count,
+chunk-independence and inverse cases become #guard checks. Wired into
+test/lean/tv/check.py (nix run .#lean-check). The Rust wire-layout tests stay.
+Final gate: build PID1, boot the TV, play the one-second pistol test at the
+current level; the owner listens. The agent cannot do this step.
+
+Proofs (after the driver works, not before)
+-------------------------------------------
+1. Loudness ceiling: for every boost, gain and sample,
+   |scale boost gain sample| <= 9830.
+2. Resampler exactness: output frame count is floor(n * 48000 / rate); 48 kHz
+   stereo input is bit-exact; splitting the input into chunks never changes
+   the output; consumedInputFrames is the inverse of the count.
+3. Open/cleanup ordering, over the trace of the mock monad: volume is restored
+   before the route, the route before PCM stop/close; PCM is never closed
+   while a route is unresolved; a failed cleanup poisons the lease and the
+   next open is refused.
+Each is a theorem about the shipping definition, not a copy.

@@ -1,0 +1,273 @@
+TCL 32Q3K: unlock failure, recovery, and prevention
+Recorded 2026-10-30 America/Los_Angeles / 2026-10-31 UTC
+
+REPRODUCED ON macOS, 2026-10-31 AFTER DOOM TEST
+
+The original PNY stick (serial 07210C69972A5005, FAT UUID 6ECB-21F4)
+was reinserted. Its primary/backup FAT labels contained LF --show LF spaces,
+not the LF --fast LF spaces that previously reached persistent Fastbootd.
+Only update_signed.zip was present. Both expected filenames now contain the
+same verified 22-byte empty ZIP. No downloaded firmware payload was added.
+
+The owner ran:
+  sudo /usr/bin/python3 research/recovery-probe/prepare-fastboot-label-macos.py /dev/disk4 --apply
+
+That macOS helper verified the unique external PNY, original serial, size,
+MBR, FAT geometry/UUID and agreement of all three labels. It backed up the
+three affected 512-byte sectors, changed only their 11-byte label fields,
+and reopened/read back all sectors. The final applied:true record is:
+  assets/research/recovery-probe/usb-backup/macos-fastboot-label-20261031T220952.500610Z.json
+
+The owner then confirmed Fastbootd appeared using the standby/physical Power
+procedure below. Remote Reboot to bootloader produced an expected black
+screen; removing the stick and reconnecting the USB data cable restored
+Fastboot access. Flashing .#stock-boot restored normal Android. Live USB ADB
+confirmed G06/V109, boot_completed=1, test marker absent, SELinux Enforcing.
+No factory reset was part of this later recovery. No post-restore boot hash
+was captured. The new 64 MiB recovery image was not needed or hardware-tested.
+
+Re-identify diskN each time; do not reuse /dev/disk4 blindly. On this macOS,
+diskutil's whole-device flag is WholeDisk (the helper also supports Whole).
+The malformed label may appear as NO NAME in Finder, which does not prove
+its raw bytes. Do not rename the volume or replace --fast with --show.
+
+CURRENT RESULT
+
+Normal boot was restored. The owner confirmed reaching the Google TV setup
+screen after Wipe data/factory reset in stock recovery and Reboot system now.
+
+The bootloader last reported unlocked:yes, secure:no, and version
+01.01.250118 immediately before the successful recovery/reset sequence.
+After reset, authorized ADB at 192.168.77.2:5555 works. Android reports
+ro.boot.vbmeta.device_state=unlocked, ro.boot.verifiedbootstate=orange and
+sys.boot_completed=1. ADB runs as uid 2000 (shell). Subsequently, uid0 command
+execution through the stock factory service was demonstrated, and exact V109
+boot/recovery/vbmeta/MBOOT images were dumped and verified. The completed backup
+under assets/backups/v109-stock-20261031 contains 33 images (4522 MiB), all matching
+second source reads and fresh host-file hashes. See manifest.json and
+host-verification.json. Userdata/RPMB are excluded; no restore has been tested.
+See research/ROOT_READBACK_NOTES.txt for this later development and its limits.
+See assets/research/device/post-reset-adb-state.txt for the live read-only results.
+
+LATER USB STORAGE CHANGE (2026-10-31 UTC)
+
+At the owner's request, the entire working recovery stick was archived before
+reformatting it for backup storage. The PNY serial is 07210C69972A5005.
+The full 31,042,043,904-byte USB image and its verification record are under:
+  assets/backups/usb-fastboot-trigger-20261031T054144Z/
+The compressed image's decompressed SHA256 matched the captured source stream.
+The archive preserves the MBR, special FAT label, files and all unused sectors.
+
+The physical stick now has ordinary FAT32 label TVBACKUP, UUID 0B6D-E4EC.
+It no longer has the Fastbootd trigger described below. The old image is
+preserved locally and is included in the USB export as numbered compressed
+parts because the complete archive exceeds FAT32's per-file limit. See
+research/usb-export/PREVIOUS_USB_IMAGE.txt for reassembly, and that directory's
+copy/verification records for transfer status. The V109 TV images are copied
+as individual, unsplit .img files. Restoring the old whole-USB image would
+erase this new backup storage; preserve the new contents elsewhere first.
+Do not run the old label writer directly against the new filesystem.
+
+DEVICE AND SCOPE
+
+TV: TCL 32Q3K; platform G06 / MT5867 / MT9221; Android 11, ARM32.
+Installed build before the incident: V8-T221T04-LF1V109.000732, AR33.
+Bootloader: 01.01.250118. Product reported by Fastboot: C06_eu.
+Offline analysis used the newer official V8-T221T04-LF1V122 package.
+V122 binaries are research references, not backups of this TV's V109 images.
+
+WHAT HAPPENED
+
+1. The owner authorized unlocking and its factory reset.
+2. fastboot flashing unlock returned OKAY. Read-only queries reported
+   unlocked:yes and secure:no.
+3. The assistant issued fastboot reboot bootloader as a persistence check.
+   The unlocked state was confirmed again, then fastboot reboot was issued.
+4. The TV subsequently showed the Google TV logo briefly and went into
+   standby/powered off. It did not merely remain on a black Fastboot screen.
+   No replacement firmware, boot, recovery, or bootloader image had been
+   flashed when this failure began.
+5. After the recovery procedure below and a stock factory reset, the owner
+   confirmed reaching setup again.
+
+LIKELY CAUSE, AND WHAT IS NOT PROVED
+
+In the inspected V122 MBOOT implementation, unlocking writes boot-recovery
+and recovery\n--wipe_data\n into the bootloader control block (BCB), raw-erases
+userdata, and changes the lock state. Recovery is then expected to finish
+formatting the erased data partition.
+
+The reboot-bootloader handler overwrites the BCB's boot-recovery command.
+The bootloader consumes that replacement request; a later ordinary reboot
+does not restore the original request. Our extra reboot into the bootloader
+therefore likely diverted the recovery wipe that should have followed unlock.
+The stock factory reset restoring boot supports this explanation.
+
+During the failure investigation, we had neither a dump of the installed V109
+bootloader nor the original boot-failure log. A V109 bootloader dump is now
+available from the later backup, but its wipe/reboot implementation has not
+yet been reanalyzed here. The cause remains an evidence-backed hypothesis,
+not a proven V109 diagnosis. See research/unlock-recovery-analysis.md.
+
+PREVENTING A REPEAT
+
+- Treat an unlock and its recovery wipe/format as one operation. Immediately
+  after unlocking, verify state with read-only getvar queries only. Preserve
+  the pending recovery request and let the wipe finish before testing any
+  further boot modes. Do not insert reboot bootloader as a persistence check.
+- A normal reboot directly after unlocking should preserve the pending
+  boot-recovery request in the inspected implementation. This preventive
+  sequence is inferred from V122; we did not unlock this TV a second time to
+  test it. Do not repeat flashing unlock on an already-unlocked TV.
+- Confirm successful normal boot before experimenting further. Record lock
+  state again from the running system when ADB is restored; another unlock
+  or immediate reboot cycle is unnecessary.
+- Preserve the working recovery artifacts listed below. Before experimental
+  boot/bootloader image writes, establish a readback route and preserve this
+  unit's exact images and unique calibration data. Fastboot USB readback and
+  temporary fastboot boot were not available in the inspected command table.
+- Do not use relocking or a blind raw metadata/userdata erase as a remedy.
+  Raw erase is not recovery's filesystem/encryption preparation.
+
+WHAT FAILED OR WAS NOT SUFFICIENT
+
+- Holding physical Power before connecting mains did not start this TV.
+- An empty ZIP reached Installing updates -> Error -> restart. It established
+  entry to stock recovery, but did not perform an update or repair data.
+- Generic Power+Volume-Up advice did not produce a usable menu. The owner had
+  about three seconds to swap USB devices; that was not a practical solution.
+- In inspected TCL V122 recovery, an update error can exit recovery even when
+  text is visible. Generic AOSP advice about revealing text to keep the menu
+  open was not sufficient for this TCL build.
+- A clean fastboot reboot recovery was accepted, but the owner saw No command
+  briefly and then a restart. It also needed an explicit --show_text request.
+- Fastbootd's screen worked, but the TV did not enumerate over USB in that
+  mode, including after a cable reconnect. The normal remote worked there.
+- Enter recovery from our specially triggered Fastbootd session was avoided:
+  in V122 it retains the original update arguments in the same process.
+  That path was not tested on V109. Reboot to bootloader worked instead.
+
+RECOVERY PROCEDURE THAT WORKED ON THIS UNIT
+
+A. Reach a persistent Fastbootd menu through the prepared USB stick.
+
+The approved 32 GB PNY stick has one MBR/FAT32 partition, label originally
+TVRECOVERY, UUID 6ECB-21F4. It contains two identical 22-byte empty ZIPs:
+  update_signed.zip
+  V8-T221T04-LF1V109.000732.zip
+Their SHA256 is:
+  8739c76e681f900923b900c9df0ef75cf421d39cabb54650c4b9ad19b6a76d85
+These names do not identify firmware payloads; the archives contain no files.
+
+The important change is the 11-byte volume label, hexadecimal:
+  0a2d2d666173740a202020
+Equivalent bytes: LF, --fast, LF, three spaces.
+
+MBOOT's inspected root-label path copies its first eight bytes into a
+newline-delimited recovery argument field. This adds --fast, recognized as
+an unambiguous abbreviation of --fastboot by recovery's main option parser.
+Actual V122 MBOOT instructions and libc getopt_long were exercised offline
+with Unicorn, with hardware access and simple libc operations stubbed.
+The owner then confirmed the trigger worked on the actual V109 TV.
+
+With the TV plugged into mains and in standby, insert the prepared stick.
+Hold the TV's physical Power button; release it when the LED blinks, using
+the same successful USB-upgrade entry procedure. Fastbootd should stay open.
+Use the normal remote to choose Reboot to bootloader. Remove the stick and
+connect the USB-A cable to the laptop. A black bootloader screen is expected;
+verify it through USB enumeration rather than assuming the TV powered off.
+
+B. Identify bootloader Fastboot and explicitly request a visible recovery.
+
+Bootloader USB was 0e8d:5000. Its serial text was garbled, so commands selected
+the USB path shown by sudo fastboot devices -l. The observed path was
+usb:3-1.3; re-identify it each session rather than assuming it is unchanged.
+
+Read-only checks immediately before writing:
+  product: C06_eu
+  is-userspace: no
+  unlocked: yes
+  partition-size:cache: 0x06400000
+  partition-type:cache: ext4
+  max-download-size: 0x30000000
+
+The prepared assets/research/recovery-probe/cache-menu.img is exactly 104857600
+bytes (100 MiB). It is an ext4 cache filesystem whose /recovery/command is
+exactly the 12 bytes --show_text followed by newline. It contains no wipe
+command. The file has the stock cache_recovery_file SELinux label.
+
+Image SHA256:
+  0f2f01c087e4fa0df4ce97b5f70b5c966edee994787c3577a3ba0fc1013bedad
+
+It was created with mke2fs.android using the extracted stock recovery's
+mke2fs.conf, 4096-byte blocks, 256-byte inodes, and initialized journal/inode
+tables, then populated with e2fsdroid. e2fsck -fn passed; debugfs verified
+command contents, ownership, SELinux xattr and stock-compatible ext4 features.
+Do not use a newer host's default filesystem features without checking them.
+
+Commands that succeeded, from /home/eduardo/tv_hack:
+  sudo fastboot -s usb:3-1.3 flash cache assets/research/recovery-probe/cache-menu.img
+  sudo fastboot -s usb:3-1.3 reboot recovery
+
+These are recorded commands, not unconditional instructions for another TV:
+check the target, unlocked state, cache size/type, and image hash first.
+Flashing this image replaces cached files and old recovery logs. The owner
+was told this and instructed us to keep going. Both sending/writing cache
+and rebooting recovery returned OKAY. Device readback was unavailable; the
+owner's subsequent persistent recovery menu is the functional confirmation.
+
+C. Complete the stock factory reset.
+
+The owner confirmed the Android Recovery menu stayed open and listed
+Wipe data/factory reset. Using the normal remote, select that option, confirm
+the reset, wait for completion, then select Reboot system now. The owner
+confirmed the Google TV setup screen appeared afterward.
+
+This factory reset erases user data/settings. It was already authorized in
+this session. That authorization is not blanket consent for a different
+owner or a future reset after valuable data has accumulated.
+
+WHAT WAS CHANGED
+
+- Bootloader unlock state and the normal unlock-related userdata/BCB writes.
+- USB stick formatting and the special volume-label metadata.
+- TV cache partition, with the explicit recovery-menu command image.
+- User data and related reset state through the stock recovery factory reset.
+
+No downloaded V122 OTA, replacement kernel/boot image, replacement recovery,
+MBOOT image, critical unlock, or relock was applied. This recovered normal
+boot; it did not establish root access.
+
+ARTIFACTS TO KEEP
+
+research/recovery-probe/NOTES.txt: chronological observations and corrections.
+assets/research/recovery-probe/cache-menu.img: working cache/menu image.
+research/recovery-probe/cache-menu-root/recovery/command: its exact command.
+research/recovery-probe/cache-menu-file-contexts.txt: SELinux labels.
+assets/research/recovery-probe/cache-menu-validation.txt: filesystem check.
+research/recovery-probe/prepare-fastboot-label.py: device-guarded label writer.
+research/recovery-probe/validate-label-trigger.py: offline binary emulation.
+assets/research/recovery-probe/label-trigger-validation.json: emulator result.
+assets/research/recovery-probe/usb-backup/fastboot-label-20261031T041727Z.json:
+  original and modified sectors for the USB metadata change.
+assets/research/device/cache-menu-preflash-state.txt: live partition/state checks.
+assets/research/device/cache-menu-flash-result.txt: write responses.
+assets/research/device/cache-menu-reboot-recovery.txt: reboot response.
+research/device/unlock-result.md: unlock history and recovery outcome.
+
+The label writer is tied to the identified PNY device, size, geometry, UUID
+and original TVRECOVERY label. It is not a generic formatter or idempotent
+command to rerun on the already-prepared stick. Renaming/reformatting the
+stick or repairing away its intentional label bytes removes the trigger.
+The prior NixOS installer filesystem was backed up separately under
+assets/research/recovery-probe/usb-backup; that is not a full-device backup.
+
+NEXT ROOT/KERNEL-DEVELOPMENT STEP
+
+ADB authorization and running-system boot-state checks are complete. A later
+stock-service root/readback route has now produced verified original V109
+images; see research/ROOT_READBACK_NOTES.txt and the completed backup manifest.
+Preserve the verified originals and patch separate copies. The successful recovery
+sequence is a fallback, not evidence that arbitrary kernel or bootloader images
+can be recovered. Root command execution is currently confined by the stock
+service's SELinux domain; ADB itself remains an ordinary shell.

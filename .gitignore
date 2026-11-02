@@ -1,0 +1,8 @@
+/assets
+__pycache__/
+*.py[cod]
+/result
+/result-*
+
+# Lake build output, in every package
+.lake/

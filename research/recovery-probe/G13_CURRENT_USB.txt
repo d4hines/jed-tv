@@ -1,0 +1,114 @@
+Current G13 USB: official V033 update, prepared 2026-11-01T04:31Z
+
+PURPOSE AND STATUS
+Owner authorized the proposed full V033 USB update trial with "let's try that".
+The earlier empty discovery marker has been replaced by the actual signed
+V033 OTA. Full USB readback and read-only filesystem check passed; the stick
+was flushed and unmounted before the owner connected it to the TV.
+PHYSICAL RESULT: backlight only, with no text or blinking LEDs. The owner
+confirmed leaving the TV untouched while additional serial startups arrived:
+automatic restarts are now confirmed for this V033 trial. Successful update
+or recovery entry is not confirmed. The running partition contents cannot
+be read; do not assume that no OTA writes occurred merely from the blank UI.
+Do not repeat this same ZIP/label trial as a newly established remedy.
+
+TARGET
+New TV only: G13_2K_US, installed V8-T221T10-LF1V013, project 20046,
+bootloader 01.01.250814. Photographed board: 40-MT21TB-MPC2HG,
+TPD.MT9221T.PB771 (T). Backup identity: USB ADB serial 18ACC22D1C47.
+This is not a G06 / T221T04 / V109 or V122 preparation.
+
+USB CONTENTS
+SanDisk serial 03046508112725103421; FAT32 UUID 9EDC-3795.
+Existing single MBR partition at LBA 2048 was retained, without reformatting.
+Ordinary volume label RECOVERY (hex 5245434f56455259202020) is unchanged.
+The ONLY file is update_signed.zip, the original V033 archive renamed:
+  Bytes: 1379019088
+  SHA256: e3e51c77cbd1b55ce28c5190e19640d15ba8ba31d424f376b98515e6cd431fb9
+  MD5: 9747ffa60fd630535da5c8a749ee7fdb
+Source, retained mode0400:
+  assets/research/firmware/V8-T221T10-LF1V033/V8-T221T10-LF1V033.zip
+The removed 22-byte marker is archived with this attempt's evidence.
+
+EXPECTED PATH AND LIMITS
+Exact V013 MBOOT label/BCB emulation with these inputs constructs:
+  recovery
+  --update_package=/mnt/usb/sda1/update_signed.zip
+  --label=RECOVERY
+  --uuid=9edc-3795
+There is no --fast, --show or wipe argument. The TV's discovery path writes
+boot-recovery to misc; host stick preparation did not write TV partitions.
+
+TCL's production query for project 20046/current V013 offered this V033 OTA.
+Its detached whole-file signature verifies against stock V013 recovery's
+trusted certificate. All ZIP CRCs, length, MD5 and SHA256 pass. Metadata says
+pre-device=G13, Android 14 / AU21. The payload includes 19 partitions,
+including init_boot and mboot. Successful installation is a full firmware
+update; preservation of the unlocked state through this update is untested.
+
+This is an A/B OTA consumed by INSTALLED recovery, not an independent rescue
+kernel or bootloader service package. Do not rename it MstarUpgrade.bin.
+It cannot repair a failure that prevents recovery processing the archive.
+G13 recovery shares the init_boot loading path; involvement of the patched
+init_boot_a remains a hypothesis rather than a captured failure diagnosis.
+Earlier --fast, --show and ordinary-label/empty-ZIP attempts failed visibly.
+The ordinary-label control showed only backlight. Exact V013 skips the
+orange warning when isBootToRecovery returns 1; this supports a recovery
+selection explanation but does not establish successful recovery startup.
+
+PROCEDURE USED FOR THIS ATTEMPT (not a request to repeat it)
+1. Use the established sequence: hold physical Power while connecting mains
+   to establish stable standby, then release the button.
+2. Insert this SanDisk in the TV.
+3. Hold physical Power from standby, releasing when the LED blinks or the
+   update starts. Observe the screen and LED.
+4. Keep mains and USB connected while updating. If only backlight appears,
+   report that state and leave it powered for observation rather than
+   repeatedly restarting a possible installation.
+
+SERIAL
+Screen 31845.tv-uart is still the sole owner of ttyUSB1, at 115200 8N1.
+The same append log remains active so the owner's existing viewer works:
+  tail -f /home/eduardo/tv_hack/assets/research/device/screen-uart-empty-usb-20261101T040907Z.log
+Preparation began with 25126 bytes in this log. The filename is historical.
+No capture restart or assistant serial transmission occurred. UART BUS OFF
+is firmware gating and does not itself prove execution stopped.
+
+EVIDENCE
+  assets/research/g13-v033-usb-20261101T043110Z/
+plan.json records identity and authorization; prepare.py records the exact
+copy/check procedure; ready.json records completion. The copied stream and
+full file after an unmount/cache flush/read-only remount match the expected
+SHA256. fsck-after.txt confirms a clean filesystem; partitioning and
+UUID/label are unchanged. previous-current-usb.txt retains the old control
+guide. V033 signature and production metadata evidence:
+  assets/research/g13-usb-reader-20261101/v033-verification.json
+  assets/research/g13-usb-reader-20261101/firmware-query-current.json
+That folder's 40-MiB snapshot/emulation describes the PRIOR empty-marker
+stick, not the full V033 file or current physical USB behavior.
+physical-trial.json and physical-trial-serial.bin record the owner's outcome
+and new boot logs; serial-observation.jsonl records subsequent observation
+times without opening the serial device or changing Screen.
+
+NEXT USB-ONLY ROUTE
+Exact V013 custar probes upgrade_image.pkg and related service packages,
+then MstarUpgrade.bin. These invoke ustar and its firmware-header and payload
+authentication; Secure_doAuthentication rejects uninitialized crypto and
+failed signatures. No unlocked-state bypass was found in that verifier.
+An authenticated service package for T221T10/G13/project 20046 is needed for
+this established independent updater path. It is a different container from
+the V033 Android OTA or our raw partition backups. No verified matching
+download was found in the searches recorded on 2026-11-01. The ordinary
+Q3K support page provides manuals, not an identified service package:
+  https://support.tcl.com/en_US/q3k-series
+Do not assume another model using the same PCB is firmware-compatible.
+
+IF CONTROL RETURNS WITHOUT A SUCCESSFUL UPDATE
+Preferred minimal repair is the exact stock V013 init_boot_a from:
+  assets/backups/g13-v013-stock-20261031/
+Size 8388608; SHA256:
+  ba21e944050398f71b9d137f4c569e930dd912f94aa50d44392aa94f61dfa0b9
+Reassess installed version and slot first if V033 installation was attempted;
+do not blindly put V013 init_boot into an updated V033 slot.
+Do not unlock again, relock, or use the original TV's 100 MiB cache image.
+This TV's cache is only 5 MiB.

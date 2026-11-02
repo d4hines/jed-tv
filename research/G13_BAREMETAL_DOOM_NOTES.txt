@@ -1,0 +1,224 @@
+Bare-metal Doom feasibility: G13 / MT5867 / V013
+2026-10-31. Offline analysis, not an executed bare-metal port.
+
+Scope and current state
+-----------------------
+This concerns the newer G13_2K_US / MT9221-Lite TV, owner-reported rear label
+31Q3K, project 20046, V8-T221T10-LF1V013, bootloader 01.01.250814.
+It does not describe the original G06 / V109 TV.
+
+ADB had no devices during this investigation. AGENTS.md and
+G13_MAGISK_NOTES.txt record a subsequent init_boot experiment and startup
+failure. Earlier successful Android startup is not the current state.
+All hardware findings below come from the verified pre-experiment stock
+backup and previously captured identity, not fresh live register reads.
+No TV boot command, register write, flash, or USB-storage mutation was made.
+
+Minimum useful target
+---------------------
+Keep the existing early boot chain to initialize DDR, clocks, power and the
+panel, then hand off directly to our own program instead of Linux. One CPU
+core is sufficient; initially poll devices with interrupts masked.
+
+The practical minimum is three hardware interfaces, plus watchdog/power
+handling and CPU/RAM startup:
+
+  1. Display: write a visible buffer through the existing GOP/OSD scanout.
+     Initially inherit the panel timing, link, scaler and backlight setup.
+  2. Time: poll one stable counter for game ticks and delays. No timer IRQ
+     or general interrupt-controller driver is needed for this milestone.
+  3. Input: poll UART or the IR receiver. UART can also carry diagnostics.
+     A prerecorded demo can omit input; a TV remote may only report one key
+     at a time and needs repeat/release handling for gameplay.
+  4. Watchdog/power: determine what remains armed at entry, then feed or
+     deliberately disable it. The saved MBOOT configuration enables WDT.
+     Any PM-controller keepalive requirement remains to be established.
+
+CPU startup must establish a stack, vectors/fault reporting, .data/.bss,
+known interrupt/MMU/cache state, and a bounded allocator. Use correct device
+memory attributes and barriers, and clean framebuffer cache lines if needed.
+Identify reserved/secure/firmware regions and quiesce unrelated active DMA;
+"Android used this memory" is not sufficient evidence that it is safe now.
+
+Embed or preload the WAD into RAM with the program. Implement memory-backed
+WAD reads and the small runtime/libc surface Doom uses. Persistent saves and
+configuration can be omitted initially. This removes the need for our own
+eMMC, USB, filesystem or networking drivers in the running payload.
+Loading still relies on whichever bootloader transport we establish.
+
+No GPU, audio, Bluetooth, Wi-Fi, tuner, HDMI receiver, SMP scheduler, process
+model or virtual filesystem is needed for the initial silent port. The CPU
+does Doom's software rendering; display scanout is separate from the Mali GPU.
+
+Concrete evidence from this unit
+--------------------------------
+Generated artifacts are in assets/research/g13-baremetal/.
+
+CPU:
+  Captured /proc/cpuinfo reports four cores, implementer 0x41, part 0xd05,
+  variant 2, revision 0. Linux's CPU-ID definitions identify 0xd05 as A55.
+  The installed kernel is AArch32 ARMv7l 5.15.167-android14-11. Start with an
+  AArch32 payload matching that handoff; AArch64 entry is a separate question.
+  Source capture: assets/research/new-tv-20261031T183329Z/identity.txt.
+
+Device tree:
+  Extracted the actual FDT from stock vendor_boot_a.img, after its 64-byte
+  vendor prefix; converted it with dtc. image-layout.json records offsets,
+  sizes and hashes. dtc reports warnings in the vendor tree; it is not a
+  clean generic board description.
+  It names mstar-gflip, mstar-xc, mstar-scaler, mstar-ir and mstar-mbx.
+  The timer is arm,mstar-timer-workaround / arm,armv8-timer, 12000000 Hz.
+  GIC distributor is described at 0x16001000, CPU interface at 0x16002000.
+  MI_BOOTLOGO_BUF and many other memory-map nodes have no reg value in the
+  stored tree. Do not use the static tree as the final runtime memory map.
+
+Kernel configuration:
+  CONFIG_MSTAR_MT5867, CONFIG_MSTAR_GFLIP, CONFIG_MSTAR_GRAPHIC,
+  CONFIG_MSTAR_IR_REFACTOR, CONFIG_SERIAL_8250, CONFIG_ARM_GIC and
+  CONFIG_MP_GLOBAL_TIMER_12MHZ_PATCH are enabled.
+  CONFIG_HAVE_ARM_ARCH_TIMER is NOT set. Consequently the DT timer's name
+  does not prove that a generic architectural-counter implementation works.
+  Confirm counter access at the actual payload privilege level; the MStar
+  timer implementation is a fallback/reference.
+
+Bootloader environment and memory:
+  Both 64-KiB environment copies at MPOOL offsets 0x2e0000 and 0x2f0000
+  pass CRC32 verification, with the same stored CRC 0x528518da.
+  mboot-environment-hardware.json contains the filtered hardware fields.
+  They record:
+    bootlogo_gopidx=2
+    MI_BOOTLOGO_BUF_ADR=0x36440000
+    MI_BOOTLOGO_BUF_LEN=0x400000
+    WDT_ENABLE=1
+    WDT_TUMEOUT=120
+    UARTOnOff=off
+    console=ttyS0,115200
+    MI_MBOOT_MEM_USAGE_ADR=0x7400000, LEN=0x2400000
+  The selected memory-map path also appears in MPOOL:
+    /vendor/cusdata/config/onebin/model_2/
+      MMAP_MI_mt5867_1G_ANR_2K_IOMMU_UMA_US.h
+  That exact file was extracted as selected-mmap.h. It agrees on the logo
+  buffer and describes 1 GiB of MIU0 DRAM, plus firmware/secure reservations.
+  These are MIU-domain addresses, not automatically CPU physical addresses.
+  A +0x20000000 translation is suggested by the kernel/PM memory fields,
+  making 0x56440000 a candidate CPU address for the logo buffer. This is an
+  inference, NOT a validated address for a write. Confirm the translation,
+  GOP memory client, pixel format, pitch and cache behavior first.
+  Memory-map layers overlap intentionally; do not add their sizes together
+  or allocate across regions solely because their definitions look unused.
+
+Panel and graphics:
+  project_id.img selects project 20046. Its cusdata index was extracted as
+  dataIndex_20046.ini and selects:
+    bsp/common/panel/CSOT32_ST3151B07-1.ini
+    bsp/board/BD_MT5867-H1V1-B2-S_TCL/board-na.ini
+  Panel configuration: 1920x1080, LINK_LVDS, dual port, extension type 24,
+  HTotal 2200, VTotal 1140, nominal DCLK field 150.
+  This is the selected firmware configuration, not a measurement of the
+  present panel signals or a confirmed live scanout size.
+  Its TCON configuration includes a panel PMIC I2C initialization sequence.
+  Android's max_graphics_width/height=1280x720 is a separate rendering limit.
+  MBOOT contains GOP setup and framebuffer-address functions and a message
+  for falling back from RGB8888 to YUV422 when the boot-logo buffer is small.
+  1920*1080*4 = 8294400 bytes, too large for the 4-MiB logo reservation;
+  1920*1080*2 = 4147200 bytes fits before any additional pitch alignment.
+  Thus blindly treating this as a full-panel 32-bit RGB framebuffer is wrong.
+  The actual format could be YUV422 or a smaller scaled image; read the GOP
+  state / trace the exact MBOOT setup before choosing a conversion routine.
+  AFBC is enabled for Android graphics, which does not establish the format
+  used by the bootloader. Prefer a confirmed linear scanout for our port.
+
+IR:
+  The selected project index points to the TCL board's ir_config.ini.
+  It specifies protocol 0x07, header 0x000f; left/right/up/down are
+  0xa9/0xa8/0xa6/0xa7, enter 0x0b, back 0xd8. These are configuration values,
+  not captured waveforms. A decoder still needs timing/repeat handling.
+
+Public driver leads, not exact V013 source
+-----------------------------------------
+TCL's older mt9221 repository includes an explicit mt5867 HAL. Downloaded
+references are pinned to 098aa173622fa59a5531b9b01d8f9fc3b0e539f8;
+sources/manifest.json records URLs and SHA256 values. Its kernel is older
+than this TV's 5.15 build, so cross-check registers against exact V013 MBOOT
+and saved libutopia.so rather than assuming full compatibility.
+
+  drivers/mstar2/hal/mt5867/gflip/mhal_gflip.c, mhal_gflip_reg.h:
+    GOP address registers, bank selection, MIU selection and flip commits.
+  drivers/mstar2/hal/mt5867/cpu/arm/chip_timer.c, include/mach/platform.h:
+    MStar/global-timer variants; timer0 PA 0x1f006040, timer1 PA 0x1f006080.
+  drivers/mstar2/hal/mt5867/cpu/arm/chip_early_printk.c:
+    16550-style UART, UART0 PA 0x1f201300, register stride 8 in this source.
+  drivers/mstar2/hal/mt5867/ir/mhal_ir_reg.h:
+    IR FIFO/status/decode register definitions.
+  drivers/mstar2/hal/mt5867/pm/mhal_pm_reg.h:
+    WDT and PM-controller register leads.
+
+The older kernel's 0xfd... virtual mappings must not be used as physical
+addresses in a bare-metal payload. RIU register indexing also differs from
+ordinary contiguous 32-bit register layouts. None of these leads was probed
+on hardware during this task.
+
+Boot entry remains unresolved
+-----------------------------
+We have not demonstrated execution of arbitrary RAM-resident code.
+Offline MBOOT command-table candidates include bootm, fatload, loadb/loady
+and fastboot. Access to its UART console and its authentication policy are
+not demonstrated. The nearby Fastboot dispatch-table candidates include
+download/flash/erase/unlock/slot selection, but no boot entry was identified.
+Do not assume "fastboot boot payload.img" works because flashing works.
+Command strings/table entries alone do not prove a usable loader path.
+
+vendor_boot header fields name kernel 0x20208000, ramdisk 0x21208000 and DTB
+0x22108000; these are recorded metadata, not a validated payload memory plan.
+Resolve entry ABI, image wrapper, image verification and available RAM first.
+Prefer an established RAM-only load/execute path before changing boot images.
+
+Implementation sequence
+-----------------------
+1. Resolve the current startup problem and establish a repeatable loader
+   handoff separately, following AGENTS.md and the recovery notes.
+2. Our startup code on one core: diagnostics, bounded RAM, timer, watchdog.
+   Demonstrate that it remains running beyond the configured watchdog period.
+3. Confirm GOP2's buffer/format and draw a rectangle while retaining panel
+   timing. Then draw an animated pattern with correct cache maintenance.
+4. Run a Doom demo with a WAD in RAM, then add polled UART or IR input.
+5. Replace inherited initialization incrementally: own GOP configuration,
+   clocks, scaler/panel link, TCON/PMIC I2C, GPIO/PWM/backlight, PM handling.
+   Storage, audio and USB are useful later but unnecessary to prove Doom.
+6. DDR training and earlier boot/security stages are a separate, much larger
+   project. Android bootloader unlock does not demonstrate that arbitrary
+   replacements for those earlier stages will be accepted.
+
+This gives us our own runtime and drivers with no Linux underneath, while
+retaining early firmware initially. Completely replacing the vendor boot
+chain requires substantially more hardware initialization than Doom itself.
+
+Doom port reference
+-------------------
+Doomgeneric commit e257a09527062bfb986b6e5e0780839b6cbd5b71 was inspected.
+It exposes init, draw-frame, sleep, ticks, keys and window-title hooks; sound
+is optional. Its default WAD backend still uses fopen/fseek/fread and it
+uses malloc. Implementing the display hooks alone is not a bare-metal port.
+Replace WAD I/O with a bounded RAM backend, supply the required runtime,
+and disable persistent settings/saves until storage is intentionally added.
+
+Primary external references
+---------------------------
+https://github.com/ozkl/doomgeneric
+https://github.com/TCLOpenSource/TCL_Kernel_OpenSource
+https://github.com/TCLOpenSource/mt9221/tree/098aa173622fa59a5531b9b01d8f9fc3b0e539f8/drivers/mstar2/hal/mt5867
+https://github.com/torvalds/linux/blob/master/arch/arm64/include/asm/cputype.h
+https://source.android.com/docs/core/architecture/partitions/vendor-boot-partitions
+
+Artifact extraction notes
+-------------------------
+The FDT starts at vendor_boot_a offset 18133056 (region starts 18132992)
+and is 42382 bytes; image-layout.json holds its SHA256 and header fields.
+  nix shell nixpkgs#dtc -c dtc -I dtb -O dts -o OUTPUT INPUT
+Ext4 images were read using debugfs without -w, with dump/rdump commands.
+No journal replay or filesystem repair was performed. rdump's ownership
+warnings concern extracted host files; it could not chown them to root.
+Selected config files were readable and cross-checked against the saved
+environment. Full extraction metadata fidelity was not claimed or needed.
+The research artifacts and downloaded sources remain under ignored assets/;
+mode0400 stock originals were read only. No implementation was run on the TV.

@@ -1,0 +1,31 @@
+[package]
+build = "../../../tools/experiments/baremetal/build.rs"
+name = "tvbare"
+version = "0.1.0"
+edition = "2024"
+description = "Bare-metal feasibility spike: platform API on QEMU virt without Linux"
+publish = false
+
+# Its own workspace, so app/ is unaffected.
+[workspace]
+
+[dependencies]
+virtio-drivers = { version = "=0.13.0", default-features = false, features = ["alloc"] }
+smoltcp = { version = "=0.14.0", default-features = false, features = [
+    "alloc", "medium-ethernet", "proto-ipv4", "proto-dhcpv4", "socket-tcp", "socket-dhcpv4",
+] }
+linked_list_allocator = "=0.10.6"
+aarch64-cpu = "=11.2.0"
+libm = "=0.2.16"
+log = "0.4"
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+
+[profile.release]
+panic = "abort"
+opt-level = 3
+lto = true
+codegen-units = 1
+debug = false

@@ -1,0 +1,20 @@
+name = "JpegTest"
+defaultTargets = ["JpegTest", "transcript"]
+
+# Only the library modules under test are compiled, into this package
+# (srcDir ../..), not all of Yt as a [[require]]d package.
+[[lean_lib]]
+name = "Yt"
+srcDir = "../../../../src/lean/yt"
+globs = ["Yt.Json.Fmt", "Yt.Jpeg.+"]
+
+[[lean_lib]]
+name = "JpegTest"
+
+[[lean_exe]]
+name = "transcript"
+root = "Main"
+
+[[lean_exe]]
+name = "bench"
+root = "Bench"

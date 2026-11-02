@@ -1,0 +1,15 @@
+#!/bin/sh
+# C compiler for Rust build scripts (e.g. ring) targeting aarch64-unknown-linux-musl: zig cc with
+# zig's bundled musl. Drops the --target/-target the cc crate adds (zig wants
+# its own triple spelling) and adds ours.
+skip=0
+for a in "$@"; do
+  shift
+  if [ $skip = 1 ]; then skip=0; continue; fi
+  case $a in
+    --target=*) continue ;;
+    -target) skip=1; continue ;;
+  esac
+  set -- "$@" "$a"
+done
+exec zig cc -target aarch64-linux-musl -mcpu=cortex_a55 "$@"

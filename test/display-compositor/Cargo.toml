@@ -1,0 +1,14 @@
+[package]
+name = "display-compositor-check"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+g06-display = { path = "../../src/pid1/display" }
+
+[profile.release]
+opt-level = 2
+panic = "abort"

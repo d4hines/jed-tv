@@ -1,0 +1,7 @@
+--- a/mstar2/hal/mt5867/cpu/arm/Makefile.boot
++++ b/mstar2/hal/mt5867/cpu/arm/Makefile.boot
+@@ -1,3 +1,3 @@
+-zreladdr-y   := $(shell /bin/bash -c 'printf "0x%08x" $$[$(CONFIG_MEMORY_START_ADDRESS) + 0x8000]')
++zreladdr-y   := $(shell printf '0x%08x' $$(( $(CONFIG_MEMORY_START_ADDRESS) + 0x8000 )))
+ params_phys-y   := 0x40000100
+ initrd_phys-y   := 0x40800000

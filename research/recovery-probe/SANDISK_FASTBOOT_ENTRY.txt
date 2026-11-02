@@ -1,0 +1,68 @@
+SanDisk G13 recovery-entry preparation, 2026-11-01 UTC
+
+CURRENT at 04:31Z: owner authorized the official V033 update trial.
+G13_CURRENT_USB.txt describes the actual signed G13/T221T10 V033 OTA now
+stored as update_signed.zip, with ordinary RECOVERY label and UUID 9EDC-3795.
+Full USB readback and fsck passed; it was unmounted before the TV trial.
+Owner now reports only backlight/no text/no blinking LEDs, and confirmed no
+manual intervention while further startups were captured: automatic restarts.
+No successful installation is confirmed. See G13_CURRENT_USB.txt and
+assets/research/g13-v033-usb-20261101T043110Z/physical-trial.json.
+
+HISTORICAL at 04:22Z: stock-recovery control, ordinary RECOVERY label,
+empty update_signed.zip and UUID 9EDC-3795. --fast was removed. Evidence:
+assets/research/g13-stock-recovery-control-20261101T042241Z/.
+
+HISTORICAL at 04:12Z: the owner requested another preparation for the new G13.
+The SanDisk again has the Fastbootd trigger label, now with UUID 9EDC-3795
+and only one empty update_signed.zip. Exact V013 emulation and raw FAT audit
+passed. See G13_CURRENT_USB.txt for current contents, limits and instructions,
+and assets/research/g13-recovery-usb-20261101T041229Z/ for the evidence.
+The format and earlier preparation below describe historical states.
+
+SUPERSEDED at 04:02Z: at the owner's explicit request, this SanDisk was
+formatted FAT32 and left empty, label EMPTY, UUID 9EDC-3795. The recovery
+label and all files on the stick were removed. Read-only fsck and an empty
+directory check passed; it was flushed and unmounted. Local firmware
+backups were unchanged. Evidence: assets/research/usb-empty-20261101T040253Z/.
+The preparation and proposed retry below are historical, not current state.
+
+The owner requested preparing the currently connected stick because the PNY
+was unavailable. The identified SanDisk 3.2Gen1 is serial 03046508112725103421,
+123009761280 bytes, with one existing FAT32 partition at LBA 2048 and UUID
+0331-904C. Its V109 backup files were preserved; there was no format or file
+creation/deletion on the stick. Existing root files update_signed.zip and
+V8-T221T10-LF1V013.zip are identical empty 22-byte ZIPs, not firmware images.
+
+prepare-sandisk-label.py is guarded for this serial path, size, UUID, original
+label and unmounted state. It defaults to dry-run. At 03:28:19Z, it changed
+only the three volume-label fields from TVBACKUP plus three spaces to
+LF,--fast,LF,three spaces (hex 0a2d2d666173740a202020). This made 24 byte
+differences across sectors at offsets 1048576, 1051648 and 31162368. Original
+and replacement sectors were recorded before writing, flushed, and read back.
+
+Evidence: assets/research/sandisk-recovery-20261101T032736Z/
+  before-audit.json, after-audit.json, verification.json
+  fastboot-label-20261101T032819Z.json
+  label-validation.json, getopt-validation.json, preparation-plan.json
+
+Pre/post raw FAT audits confirm matching FAT copies and boot-sector copies,
+unchanged MBR/FAT hashes, root entries, directory chains, root-file hashes,
+and free-cluster count. Nested firmware files were not rehashed in this task.
+Exact V013 MBOOT and libc emulation recognized --fast and --uuid=0331-904c.
+This validates argument construction, not successful physical G13 entry.
+The stick requests installed Fastbootd; it is not a bootable replacement
+recovery or signed bootloader service package, and may depend on the damaged
+init_boot ramdisk. No TV partition or UART session was changed here.
+
+Proposed controlled retry: put TV in confirmed stable standby, insert stick,
+hold physical Power, and release at the first LED blinking, or after 20 seconds
+if there is no blinking. Allow one minute. If Fastbootd appears, use its visible
+Reboot to bootloader option; then substitute the laptop USB cable and identify
+the TV before restoring only exact stock G13 init_boot_a. Do not wipe, use
+blind menu navigation, or flash the older V109 backups stored on this stick.
+
+The stick was left flushed and unmounted. Reverting it to ordinary storage
+requires restoring only the label fields after checking the current device
+and filesystem state; do not blindly restore saved whole sectors after later
+filesystem changes. The original label was TVBACKUP, UUID remains 0331-904C.

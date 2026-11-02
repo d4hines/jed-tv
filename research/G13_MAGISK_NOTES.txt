@@ -1,0 +1,1522 @@
+G13 / V013: Magisk through init_boot
+Recorded 2026-10-31 UTC
+
+LATEST RESULT: ANDROID RECOVERED AND ADB ROOT VERIFIED, 2026-11-01T08:58Z
+
+The owner confirmed normal TV operation after restoring stock init_boot_a.
+The subsequent stock-init debug ramdisk boots Android and enables adb root:
+uid=0(root), context=u:r:su:s0, sys.boot_completed=1, bootanim stopped.
+The live init_boot_a partition SHA256 matches the built image. ADB key
+authentication remains enabled; SELinux is globally Enforcing, with the
+su domain deliberately permissive. No separate su executable was installed.
+The original TCL init is preserved; the failed Magisk image was not reused.
+
+Current usage, exact image hashes, reproduction and rollback are in
+research/G13_ADB_ROOT_NOTES.txt. Root proof and the startup capture are in
+assets/research/g13-adb-root-20261101/. One startup/root test is verified;
+a second power cycle was not performed. Earlier pending-state observations
+below are retained as the investigation history, not the current status.
+
+STOCK INIT_BOOT_A RESTORED, 2026-11-01T08:49Z
+
+UPDATE 08:50Z: normal Android startup is now confirmed through UART.
+Following the recovery startup, another startup reached console:/ $ and
+normal Android services. No further assistant reboot command was sent.
+Read-only serial queries confirmed sys.boot_completed=1,
+ro.software.version_id=V8-T221T10-LF1V013, slot _a, verifiedbootstate=orange,
+zygote running, and finally bootanim stopped. This supersedes the initial
+pending-startup observation below. The visible screen still needs owner
+confirmation. USB ADB is absent on the host although adbd is running with
+sys.usb.config=adb on the TV. Do not repeat recovery solely for that reason.
+The exact queries and responses are in android-serial-properties.json.
+
+The owner connected the USB data cable for the planned recovery. Fastboot
+enumerated as serial 18ACC22D1C47 at usb:1-1.3. Fresh getvars confirmed
+product tcl9216, bootloader 01.01.250814, userspace=no, unlocked=yes,
+secure=no, current-slot=a, slot-count=2, partition-size:init_boot_a=0x00800000.
+
+The original mode0400 backup was freshly SHA256-verified:
+  assets/backups/g13-v013-stock-20261031/init_boot_a.img
+  8388608 bytes
+  ba21e944050398f71b9d137f4c569e930dd912f94aa50d44392aa94f61dfa0b9
+Then these commands completed successfully:
+  fastboot -s usb:1-1.3 flash init_boot_a assets/backups/g13-v013-stock-20261031/init_boot_a.img
+  fastboot -s usb:1-1.3 reboot
+Sending and writing both returned OKAY, and UART independently recorded
+8388608 bytes written to init_boot_a. Only this partition was flashed. No
+unlock, relock, erase, factory reset, slot change or reboot-bootloader was
+issued. A full post-write partition readback has not yet been obtained.
+
+The next boot no longer reported the init_boot_a AVB hash mismatch. It
+reached Linux recovery userspace, including the recovery process and HALs,
+with explicit Recovery Boot!!! messages. A nonempty recovery request was
+reported by MBOOT; this may be left over from the earlier USB trials, but
+its current exact BCB contents were not read. Normal Android startup is
+still unconfirmed, and host ADB/Fastboot are absent after this reboot.
+The owner was asked to identify the on-screen state before further action.
+Screen 49213.tv-uart still owns ttyUSB0, logging to the same append log.
+
+Evidence: assets/research/g13-stock-restore-20261101T084914Z/ contains
+preflight.json, restore.json (image hash, exact commands, results and UART
+offsets), startup-observations.jsonl, and the post-restore boot capture.
+
+INTERACTIVE UART AND USB FASTBOOT STARTED, 2026-11-01
+
+The repeat Screen-based catcher succeeded at 08:41:20Z after two CRs and
+exited. Owner help and assistant version/printenv/help commands then worked.
+Live UARTOnOff=on, CUSDATA_PROJECT_ID=20046, U-Boot Aug 14 2025 23:40:21.
+Screen 49213.tv-uart is the sole serial owner, ttyUSB0 at 115200 8N1 with
+no flow control. The same screen-uart-20261101T083737Z.log flushes immediately.
+
+Read-only mmc part confirmed the original geometry. mmc read.p into RAM
+and full-partition crc32 produced these host-backup matches:
+  init_boot_a       8 MiB  182a267f  saved Magisk-patched image
+  init_boot_b       8 MiB  c42e713a  original V013 stock
+  vbmeta_a          1 MiB  f13e8d7d  original V013 stock
+  vbmeta_system_a   1 MiB  b72c199c  original V013 stock
+  boot_a           53 MiB f6a078a2  original V013 stock
+  vendor_boot_a    48 MiB db004966  original V013 stock
+  dtbo_a            8 MiB 732cb408  original V013 stock
+The stock and patched init_boot headers also matched their saved copies.
+These checks support restoring V013 init_boot_a. They are CRC32 comparisons,
+not cryptographic readback or a check of every partition. The custom sha256
+command calls CommonSHA/Secure_SHA_HW; its results differed from host SHA256
+even where CRC32 matched. Its semantics/output remain unvalidated; do not
+interpret those values as evidence of firmware corruption or successful SHA
+verification. RAM input buffers were 0x25000000 for init_boot, 0x21000000
+for the larger boot images; neither reaches the reported stack/monitor.
+
+Exact MBOOT command-table/handler inspection identified mstar_usb at
+0x274bf034 as the USB Fastboot path used by boot-mode dispatch. The generic
+fastboot command at 0x274bb9b8 instead calls the shared network loader.
+Invoking mstar_usb printed MTK Fastboot, tcl9216, serial 18ACC22D1C47 and
+"fastboot: processing commands ...". Host fastboot devices -l was empty.
+Next: connect the known working USB data cable without cycling TV power,
+re-identify the Fastboot target and read its state, then restore only the
+original stock init_boot_a. No firmware write, reset, unlock, slot change
+or BCB modification was requested during these checks. Recovery is pending.
+
+Evidence: assets/research/g13-uart-recovery-20261101T084204Z/ contains every
+command, raw response, readable response, CRC comparison and host USB check.
+The earlier sections below retain their historical state descriptions.
+
+1 kOhm BUTTON RESISTOR ENABLED UART, 2026-11-01
+
+The owner's resistor experiment worked on this G13 board. A nominal 1 kOhm
+resistor was connected across the mapped physical Power-button signal and
+logic ground, in parallel with the switch, with the button released. The
+owner measured about 0.56 V on that signal (normally 3.3 V released and 0 V
+pressed). The resistor was present when mains was connected. No ESP32 or
+external voltage source was needed. Exact pad locations and the connection
+changes between individual attempts were not photographed or logged.
+
+The early attempts still printed UART BUS OFF. After the owner corrected
+the placement, the captured sequence included later boots with full UART
+output, and one explicitly reported:
+
+  fore uup u8KeyPad_KeyVal [0x15]
+  Saving Environment to MMC...
+  Writing to MMC(0)... 128 blocks written: OK
+  128 blocks written: OK
+  done
+  Opening UART now
+
+This is the physical confirmation of the analyzed key-0x15 handler, which
+sets UARTOnOff=on and saves the environment. Two captured boots also reached
+Linux with output past the old cutoff. The resistor is no longer needed to
+retain the saved setting. Connect or remove it only with mains unplugged;
+keep clear of the mains PSU and its charged capacitors. The owner has now
+unplugged the TV; actual resistor removal has not yet been confirmed.
+
+UART output is restored, but an interactive bootloader prompt, firmware
+restoration and Android startup are not yet verified. Do not repeat the
+enable trial or assume the TV is repaired. The ADC reference itself remains
+unmeasured. Exact evidence and per-startup limits are in the final section
+below and assets/research/g13-uart-entry/uart-enabled-20261101T082700Z/.
+Earlier sections retain the investigation history and superseded states.
+
+NEXT CONTROL ATTEMPT, 2026-11-01T08:34:40Z
+
+With the owner reporting mains unplugged, the old receive-only capture was
+stopped cleanly. A single research/probe-uart-enter.py process now owns FTDI
+AU0563JT exclusively at 115200 8N1. It waits up to 600 seconds for U-Boot,
+then sends only CR, at most 20 per second for three seconds. It stops on a
+recognized prompt, UART BUS OFF, Starting kernel or Power Down, and does not
+re-arm for later startups. The exact MT5867 prompt matcher was corrected
+and checked locally. No bootloader commands or flash operations are queued.
+Raw/event logs: assets/research/device/uart-enter-20261101T083440.641154Z.*.
+Exec session 41320. At arming, only the open event was logged and zero bytes
+received/transmitted. Recheck liveness before any other serial access.
+
+The stock init_boot_a backup was freshly rehashed and remains 8388608 bytes,
+mode0400, SHA256 ba21e944050398f71b9d137f4c569e930dd912f94aa50d44392aa94f61dfa0b9.
+Inspect current device/slot/firmware state before selecting a restore image:
+the earlier V033 trial does not prove partitions were left unchanged.
+
+PROMPT CONFIRMED AND OWNER SCREEN HANDOFF, 2026-11-01T08:37Z
+
+The next startup was caught successfully: the probe sent exactly two CR
+bytes at 08:36:13Z, received 2358 bytes ending in two << MT5867 >># prompts,
+recorded possible_prompt and closed cleanly. This is evidence that the TV
+accepts UART input and autoboot can be stopped. No bootloader command was
+sent and no firmware restoration has occurred.
+
+At the owner's request, Screen session 49213.tv-uart now owns /dev/ttyUSB0.
+Its live descriptor and 115200 8N1, raw/no-flow-control settings were checked.
+The new log is assets/research/device/screen-uart-20261101T083737Z.log with
+one-second flushing. No Python serial process remains. The first attempted
+Screen launch with a by-id path/options exited without a session; the live
+session uses the verified ttyUSB0 node directly. No additional UART bytes
+were sent during setup. Preserve the TV's current stopped bootloader state;
+the owner can attach with:
+  sudo /nix/store/q9k0rlny9cwxc2sba5lripkm66pwmx7b-screen-5.0.2/bin/screen -r tv-uart
+If initially blank, one Enter should redraw the prompt. Ctrl-A then D detaches
+without closing the session. Recheck session/device identity after reconnects.
+
+SCREEN-BASED RETRY, 2026-11-01T08:40:42Z
+
+Owner turned the TV off and requested another catch. Screen 49213.tv-uart
+still has the correct ttyUSB0 descriptor and 115200 8N1/no flow control.
+Its log is 23764 bytes and includes subsequent un-interrupted kernel boots;
+the previously stopped prompt is no longer the assumed live state.
+Screen's logfile flush interval is now 0. research/catch-screen-uart.py
+watches new bytes only, starting at offset 23764, without opening the UART.
+After a new U-Boot marker it injects only CR through Screen window 0, at
+most 60 times over three seconds, and exits on the prompt or a later boot
+stage. Screen remains available to the owner throughout. The helper's
+syntax and stop conditions were checked locally; this transport adaptation
+has not yet been validated by a physical catch.
+Exec session: 89341; wait limit 600 seconds.
+Events: assets/research/device/screen-enter-20261101T084042.846642Z.jsonl.
+No bootloader commands or flash operations are queued.
+
+DEVICE AND AUTHORIZATION
+
+This is the newer owner-reported 31Q3K, G13_2K_US / MT9221-Lite, Android 14,
+firmware V8-T221T10-LF1V013, fingerprint AU13, bootloader 01.01.250814.
+USB ADB serial: 18ACC22D1C47. The owner asked to proceed with patched-image
+root in a side conversation. The unrelated USB backup task was not touched.
+
+The earlier unlock/reset had already completed successfully. Fresh Android
+and bootloader checks confirmed unlocked, slot a and the expected firmware.
+No second unlock, relock, factory reset or slot change was performed here.
+
+TARGET AND ORIGINAL
+
+The exact installed V013 backup is assets/backups/g13-v013-stock-20261031/.
+Keep its originals mode0400. boot_a has a kernel but no ramdisk; init_boot_a
+has the generic ramdisk and no kernel. Therefore patch init_boot_a, not boot_a.
+Do not substitute V033, old G06/V109, or another television's images.
+
+Stock init_boot_a.img: 8388608 bytes, Android boot header v4.
+SHA256: ba21e944050398f71b9d137f4c569e930dd912f94aa50d44392aa94f61dfa0b9
+Original source: mmcblk0 offset 367001600, length 8388608.
+The original backup matched independent source rereads and host verification.
+This task also rehashed the exact input before patching.
+
+MAGISK INPUT
+
+Official release: https://github.com/topjohnwu/Magisk/releases/tag/v31.1
+Installation reference: https://topjohnwu.github.io/Magisk/install.html
+APK: https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk
+APK size: 10679283 bytes.
+APK SHA256: 89cefac0a318afa39fb3880c45c87b036c05bc1ebf02a7a715b7f8d7c26ac6e7
+Matched the release API digest. apksigner verification passed; certificate:
+CN=John Wu, L=Taipei, C=TW
+Certificate SHA256: b4cb83b4dad99f997dbe872f013aa16c14eec41d167021f371f7e1330f273ee6
+
+All task artifacts/logs: assets/research/g13-magisk-v31.1-20261031/.
+The APK was installed with adb install --no-streaming. The unmodified bundled
+boot_patch.sh, util_functions.sh and armeabi-v7a native tools were extracted
+and pushed with a stock image COPY to an isolated directory on this same TV:
+  /data/local/tmp/tcl-g13-magisk-v31.1
+
+Patch command (executed on the TV, not on a different device):
+  cd /data/local/tmp/tcl-g13-magisk-v31.1
+  mkdir -p tmp
+  export BOOTMODE=true KEEPVERITY=true KEEPFORCEENCRYPT=true
+  export PATCHVBMETAFLAG=false RECOVERYMODE=false LEGACYSAR=false
+  export TMPDIR=/data/local/tmp/tcl-g13-magisk-v31.1/tmp ASH_STANDALONE=1
+  ./busybox ash boot_patch.sh init_boot_a.img
+
+The script selected metadata for pre-init storage. It preserved verity and
+encryption settings. Its new-boot.img was pulled as patched-init_boot_a.img.
+
+PATCH VALIDATION
+
+Patched size: 8388608 bytes, fitting the 8 MiB partition.
+Patched SHA256: 718bd871d89f2c274615505334f64ba05c80b6340455fa6e43e96536debf3ca7
+Header v4, kernel size zero, Android 14, patch level June 2025 all preserved.
+Only ramdisk-size bytes changed in the first header page.
+Original ramdisk compressed size: 2032630; patched: 1818283; lz4_legacy.
+All original CPIO entries preserved byte-for-byte and with original metadata,
+except init, which equals the official APK's magiskinit. The compressed
+backup of stock init matches the original. Added entries contain Magisk,
+init-ld, configuration and restoration metadata. Both embedded executables
+were decompressed and compared with the official APK binaries.
+The embedded vbmeta was unchanged; its stock hash no longer authenticates
+the altered image. This requires the unlocked bootloader. No vbmeta partition
+was flashed and verity was not disabled. See image-validation.json.
+
+FLASH
+
+ADB reboot bootloader was issued only after normal unlocked boot was proved.
+USB enumerated as 18d1:4ee7, serial 18ACC22D1C47, path usb:1-1.1.
+Enumeration took several seconds. Re-identify the path in future sessions.
+Preflight getvars: product=tcl9216, is-userspace=no,
+version-bootloader=01.01.250814, unlocked=yes, secure=no, current-slot=a,
+slot-count=2, partition-size:init_boot_a=0x00800000.
+
+At 19:27:58Z the following command sent and wrote successfully (both OKAY):
+  fastboot -s usb:1-1.1 flash init_boot_a assets/research/g13-magisk-v31.1-20261031/patched-init_boot_a.img
+Then fastboot -s usb:1-1.1 reboot succeeded at 19:28:02Z.
+Only init_boot_a was flashed. Slot B, boot, vendor_boot, vbmeta, MBOOT, cache
+and user data were not flashed or erased. Android did not return over USB
+after the reboot. The owner reports black screen/standby. Root is NOT proved.
+Recovery priority is stock init_boot_a restoration once Fastboot is reachable.
+Evidence: fastboot-preflash.json, flash-result.json, reboot-after-flash.json.
+
+ROLLBACK AND LIMITS
+
+If bootloader Fastboot remains reachable, identify this TV and current USB
+path again, then restore ONLY the exact stock init_boot_a image and reboot.
+The corresponding command is:
+  fastboot -s <CURRENT_USB_PATH> flash init_boot_a assets/backups/g13-v013-stock-20261031/init_boot_a.img
+  fastboot -s <CURRENT_USB_PATH> reboot
+This rollback has not been tested. An untouched slot B does not establish
+automatic fallback or a guaranteed recovery route. Physical recovery entry
+on this G13 remains unvalidated. Do not flash the old G06 100 MiB cache image
+onto this unit's 5 MiB cache, and do not relock a modified image.
+
+Magisk 31.1 removed reactive su permission prompts. Root access must be
+allowed explicitly in the app's Superuser tab before shell su can succeed.
+See the official release notes linked above.
+
+FAILED-BOOT OBSERVATION AND RECOVERY STICK
+
+After the first reboot the owner reported black screen/standby. A normal
+remote Power press then left the unlock-warning screen visible. Neither ADB
+nor Fastboot returned. That screen does not establish where startup failed;
+no kernel/early-init failure log is available. The pulled patched image was
+also unpacked on the laptop using the APK's static ARM64 magiskboot; its CPIO
+matched the validated patched CPIO exactly. No further TV writes were made.
+
+The owner supplied the separate PNY 32 GB stick (serial 07210C69972A5005),
+explicitly permitted erasing it, and requested no backup of its contents.
+The SanDisk firmware-export stick was not modified by this side conversation.
+At 19:33Z the PNY's existing single MBR partition was reformatted FAT32,
+initial label TVRECOVERY, UUID 6ECB-21F4. fsck.fat -n passed before the special
+label change. Its only file is a 22-byte empty ZIP named update_signed.zip,
+SHA256 8739c76e681f900923b900c9df0ef75cf421d39cabb54650c4b9ad19b6a76d85.
+It contains no firmware, executable or wipe payload.
+
+The original guarded PNY label writer was reused after its size, partition,
+mount state, UUID and label checks passed. At 19:34:12Z it wrote and read back
+the three label fields as hexadecimal 0a2d2d666173740a202020 (LF,--fast,LF,spaces).
+The empty ZIP was read back again afterward and matched. No old content backup
+was taken; the writer records only the three newly formatted label sectors:
+  assets/research/recovery-probe/usb-backup/fastboot-label-20261031T193412Z.json
+Format/copy/readback evidence: recovery-usb/ under this task's artifact folder.
+
+The new research/g13-validate-recovery-entry.py emulates the exact installed
+V013 MBOOT root-label copy and BCB assembly, with FAT discovery and libc string
+calls stubbed. It proves that this label creates the arguments:
+  recovery
+  --update_package=/mnt/usb/sda1/update_signed.zip
+  --label=
+  --fast
+  --uuid=6ecb-21f4
+The extracted stock recovery option table contains fastboot as the only option
+starting with fast. Its getopt_long dispatch was not emulated. This supports
+trying the older USB-entry technique but does not prove physical G13 recovery.
+
+Proposed physical sequence: TV in standby, insert this stick, hold the TV's
+physical Power button and release when its LED blinks. If Fastbootd appears,
+use the remote's Reboot to bootloader, replace the stick with the USB-A cable,
+and re-identify the Fastboot device before restoring stock init_boot_a.
+Do not select a wipe or apply a real firmware update for this rollback.
+
+FIRST RECOVERY-ENTRY ATTEMPT AND USB LIMITS
+
+The owner tried the stick but did not see Fastbootd. After swapping back to
+the laptop USB cable, the screen showed only backlight and the standby LED
+changed from on to off. Neither adb devices nor fastboot devices -l listed
+the TV. This does not establish which boot stage or mode was reached.
+UART/HDMI breakout is still unavailable. A full mains-disconnect retry with
+the prepared stick and physical Power held during reconnection also failed.
+The owner described the backlight going from off to steadily on, with no
+menu. Blinking was not confirmed. No additional TV flash or erase was issued.
+
+Further offline inspection used the exact stock V013 MBOOT, not V033:
+
+- get_boot_mode_from_keypad at 0x2742b130 recognizes SAR key 0x74 held for
+  more than 1099 ms as USB upgrade mode (4). Key 0x46 returns Fastboot mode
+  (13), but there is no evidence the TV's single physical button or a USB
+  keyboard can produce that SAR key. Do not suggest Scroll Lock on the basis
+  of that number alone. See mboot-early-entry.txt in this task's artifacts.
+- The udstar command at 0x27421488 defaults to /MstarDebug.script and can
+  execute its lines, but also saves sync_mmap to the bootloader environment.
+  An aligned ARM BL scan found no direct callers; its only absolute pointer
+  found was the command-table entry at 0x276b1f30. The udstar name occurs in
+  command/help text, not an identified startup command. This is not evidence
+  for automatic execution merely by adding the file to a stick. No debug
+  script was prepared. See mboot-debug-script.txt.
+- The physical USB upgrade dispatch checks update_signed.zip and the direct
+  MstarUpgrade.bin route. The latter invokes ustar, which includes firmware
+  header authentication and rejects non-secure image format. We have not
+  established a supported unsigned package route on this unlocked device.
+  See mboot-bootmode-dispatch.txt, mboot-usb-upgrade.txt, mboot-ustar-auth.txt.
+- The sita_P USB file path sets factory Pmode and requests a data wipe; it
+  is not a suitable non-wiping Fastboot entry and was not attempted. See
+  mboot-sita-usb-check.txt.
+- The init_boot load is appended after vendor ramdisk loading in MBOOT.
+  Untouched vendor_boot therefore does not by itself prove recovery is
+  independent of the modified init_boot. No failure stage is confirmed.
+
+Restoring exact stock init_boot_a remains the intended repair once a control
+interface is available. Root is still unverified and restoration has not
+yet been possible. Keep the original backup and the untouched slot intact.
+
+HIDDEN-MENU CHECK REQUESTED
+
+The exact vendor ramdisk's system/lib/librecovery_ui.so was extracted locally.
+Its _GLOBAL__sub_I_device.cpp at 0x148ec constructs the recovery menu in order:
+  Reboot system now; Reboot to bootloader; Enter fastboot;
+  Apply update from ADB; Apply update from SD card;
+  Wipe data/factory reset; Wipe cache partition; Mount /system;
+  View recovery logs; Run graphics test; Run locale test; Enter rescue;
+  Power off.
+The exact recovery executable's _GLOBAL__sub_I_fastboot.cpp at 0xcd66c builds:
+  Reboot system now; Enter recovery; Reboot to bootloader; Power off.
+These are binary constructor observations, not an assumption from generic
+AOSP menu order. See recovery-menu-constructors.txt in the artifact directory.
+The compressed .gnu_debugdata sections supplied the constructor symbols.
+
+One bounded test was requested: keep the lit blank TV powered, replace the
+stick with the laptop USB cable, tap remote Down twice then OK once, and
+stop. From the initial menu selection this requests bootloader in Fastbootd
+or enters Fastbootd in recovery. This does not prove either UI has started
+or that its current selection is the initial item. The owner reported that
+this test did nothing. Do not repeat blind selections. The USB observation
+record shows only the laptop's hubs/Ethernet, without the TV. No flash, erase
+or reboot was sent by the laptop during this test.
+
+The selected board-na.ini also puts SAR key 0x46 on disabled channels 1/3,
+while enabled channel 0 contains Power 0x74 but not 0x46. The selected
+ir_config.ini has MIR_Mstar disabled and no configured Fastboot key. These
+configuration files do not establish an ordinary-remote bootloader shortcut.
+
+RETURNED-STICK AUDIT (2026-10-31, after failed cold start and remote test)
+
+The PNY reappeared on the laptop as /dev/sda, with its expected serial and
+31,042,043,904-byte size. It was opened O_RDONLY, never mounted, reformatted
+or modified during this audit. Raw inspection confirmed:
+
+- One MBR FAT32-LBA partition, start LBA 2048, 60,626,944 sectors. Its BPB
+  hidden-sector value is also 2048. Sector size 512, cluster size 16 KiB.
+- Both complete FAT copies agree; primary and backup boot sectors agree.
+  Root/file cluster chains are valid. FSInfo free count matches the FAT.
+- BPB, backup BPB and root directory label are all 0a2d2d666173740a202020.
+- The only file is update_signed.zip (short alias UPDATE~1.ZIP), 22 bytes,
+  with the expected empty-ZIP SHA256 recorded above.
+- All three sectors changed during preparation are byte-for-byte identical
+  to the saved after-images from 19:34Z, including the root file entries.
+
+Evidence under recovery-usb/: reconnected-stick-audit.json and
+sector-comparison-after-tv.json. audit-recovery-stick.py is the read-only
+generated inspector in the Magisk artifact directory.
+
+The complete V013 ota_zip_check_usb function at 0x274a1634 initializes USB,
+checks for /update_signed.zip, obtains the label/UUID, constructs the BCB,
+and writes the request to misc. No ZIP-content authentication was identified
+before this request. The firmware updater's separate MstarUpgrade.bin path
+does authenticate its package; these paths must not be confused.
+See mboot-full-usb-ota-entry.txt. File discovery/hardware remain untested in
+the emulator; this disk audit cannot prove that the TV read the stick.
+
+There are TWO option tables in the recovery executable. The earlier report
+listed start_recovery's 17-option table. Main uses its own four-option table
+at VA 0x17d978: fastboot, locale, reason, show_text. A fresh emulator run
+executed the exact extracted V013 libc getopt_long with this main table and
+the actual constructed BCB arguments. Results were ?, ?, fastboot, ?.
+The real main loop at 0xb6af8-0xb6b06 ignores unknown arguments and continues;
+the fastboot branch checks ro.boot.dynamic_partitions, which was true in the
+pre-flash capture. Dispatch at 0xb73b4 calls StartFastboot when selected.
+This rules out an ambiguous --fast abbreviation or an immediate abort on
+--label/--uuid in main. It does not execute the entire recovery startup.
+Evidence: recovery-usb/getopt-validation.json, validate-recovery-getopt.py,
+and recovery-main-options-disassembly.txt in the Magisk artifact directory.
+Simple libc string functions/getenv were stubbed; parser code was actual ARM.
+
+The actual stock vendor_boot has one 18,128,651-byte type-1 vendor ramdisk.
+MBOOT's v4 loading path reads vendor_boot, then appends the selected slot's
+init_boot ramdisk. The stick requests installed recovery; it does not boot
+an independent image from USB. The modified init_boot may therefore affect
+recovery as well as normal boot. That is a hypothesis about the failure,
+not a captured kernel/early-init diagnosis. We still cannot distinguish
+failure to enter recovery from failure during recovery startup.
+
+Stock init_boot_a and MBOOT, and the flashed patched-init_boot_a host file,
+were rehashed and match the hashes recorded above. Stock originals retain
+mode0400. Only init_boot_a appears in this task's flash log. At audit end
+there was no TV in USB ADB/Fastboot. Ethernet was now up at 192.168.77.1/24,
+but 192.168.77.2 did not answer ping and an independent ADB connection attempt
+to port 5555 failed with No route to host. No network configuration changed.
+The PNY is unmounted and unchanged; no repair or root success is claimed.
+
+PLAIN-RECOVERY VARIANT PREPARED AT 2026-10-31T19:58:13Z
+
+After the read-only audit, only the same three FAT label fields were changed
+from LF,--fast,LF,spaces to LF,--show,LF,spaces, hex 0a2d2d73686f770a202020.
+The purpose is to request ordinary recovery text instead of Fastbootd and
+exclude a failure specific to Fastbootd's USB configuration/entry. This is
+a diagnostic variant, not a demonstrated repair or independent recovery
+image. It still depends on installed recovery and the shared boot ramdisk.
+
+Before writing, the exact V013 label/BCB code was emulated with the new bytes.
+The actual V013 libc getopt_long, using recovery main's own option table,
+returned ?, ?, 116, ? for the resulting arguments. Return 116 selects
+show_text; fastboot was not selected. Main's unknown-option loop continues.
+Reports: recovery-usb/show-text-label-validation.json and
+recovery-usb/show-text-getopt-validation.json.
+
+The adapted guarded writer required the same PNY serial/size, unmounted
+status, UUID, partition geometry, and exact old label in all three fields.
+Dry run passed, then the write was flushed and all modified sectors read
+back. Recovery-usb/show-text-label-write-20261031T195813Z.json contains the
+three before/after sectors and applied=true. A subsequent complete read-only
+FAT/file audit passed with the new label; see show-text-stick-audit.json.
+The filesystem, UUID and 22-byte ZIP contents were not otherwise changed.
+
+The owner subsequently reported that this physical test led to the same
+result as before. Neither a visible recovery menu nor a control interface
+was established. Both Fastbootd and plain-recovery label variants have now
+failed on this G13. Do not repeat blind navigation or select a wipe.
+Exact stock init_boot_a restoration remains the objective.
+
+USB EVENT CHECK AT 2026-10-31T20:06Z
+
+Read-only inspection of the laptop kernel journal since 19:27Z showed the
+TV connecting at 19:27:40Z and disconnecting at 19:28:02Z, matching the
+post-flash reboot. Subsequent USB events were the PNY flash drive, most
+recently removed at 20:04:22Z. No later TV USB connection was logged.
+Fastboot and ADB device lists were empty. No USB storage remained attached
+to the laptop. These observations do not identify the TV's failure stage.
+
+One distinct diagnostic was requested: cold-start with the previously
+working laptop USB cable already attached, without the recovery stick, and
+inspect the USB log for any transient interface. A subsequent read-only
+check at 20:22:04Z found no USB events in the preceding 15 minutes and empty
+ADB/Fastboot lists. No recovery or control interface was established.
+No further TV write has been issued, and no further stick variants are
+planned without new evidence.
+
+MAINS-ONLY STARTUP OBSERVATION
+
+The owner clarified that reconnecting mains alone lights the backlight,
+without pressing any button, and confirmed the same behavior with all USB
+cables/devices disconnected. The earlier unlocked-device warning no longer
+appears. Automatic backlight activation is not proof that our button
+sequence entered recovery. The cause and failure stage remain unknown.
+
+A read-only check of the PRE-FLASH misc backup at offset 2048 found a valid
+CRC32 for the 32-byte BCAB structure, active suffix _a, slot pairs ff00 and
+7e00. Using the AOSP bootloader_control/slot_metadata layout, slot A has
+priority 15, tries 7, successful_boot 1; B has priority 14, tries 7,
+successful_boot 0; neither is marked verity_corrupted. These are historical
+values, not a current readback. They do not establish exhausted retries or
+automatic fallback. Source for the packed metadata fields:
+https://android.googlesource.com/platform/bootable/recovery/+/refs/tags/android-9.0.0_r47/bootloader_message/include/bootloader_message/bootloader_message.h
+
+The exact V013 MBOOT contains a No bootable slots found error path and an
+AVB failure halt. Their existence does not prove either is being taken.
+Do not infer current slot state, a retained BCB command, or bootloader damage
+from the blank screen alone. Stock init_boot_a restoration remains pending
+regaining a control interface; UART is still unavailable to the owner.
+
+STABLE STANDBY OBSERVATION
+
+The owner reported that holding physical Power eventually extinguishes the
+backlight and illuminates the indicator LED. After being asked to release
+the button and observe for 15 seconds with mains connected, the owner
+confirmed it stays dark with the LED on. This establishes a stable standby
+state for the next physical entry test, not successful Android/recovery boot.
+
+One controlled attempt from that confirmed state is proposed: keep mains
+connected, insert the existing PNY plain-recovery stick, and hold physical
+Power; release at the first LED blinking, or after 20 seconds if none occurs.
+Then allow one minute and report the screen/LED state without blind remote
+navigation. Unlike the cold-start attempts, this starts from confirmed
+standby. No stick bytes or TV partitions were changed for this attempt.
+Its result is pending; physical recovery on G13 remains unproved.
+
+FIRST LIVE UART CAPTURE, 2026-10-31T22:11Z
+
+The owner connected a USB-to-TTL adapter and requested a receive-only test.
+It enumerates as FTDI FT232R 0403:6001, description DCSD USB UART, serial
+AU0563JT, with stable path:
+  /dev/serial/by-id/usb-FTDI_DCSD_USB_UART_AU0563JT-if00-port0
+The host driver attached ttyUSB0. No other process had the port open.
+
+research/capture-uart.py was started at 115200 8N1, no flow control, DTR/RTS
+deasserted, no serial writes, for 300 seconds. The owner was told to power
+on only after the listener reported ready, and subsequently confirmed power.
+Raw output is saved to:
+  assets/research/device/uart-20261031T221106.448038Z.bin
+
+Readable output reports UART_115200, AC_ON, MIU0_DQS-OK, BIST0-OK, G131,
+OP-TEE/reeloader startup, BL3-1 initialization and 32-bit normal-world entry.
+It selects MBOOT A, reaches U-Boot 2011.06 (Aug 14 2025 - 23:40:21),
+reports eMMC HS400 5.1 / 200MHz, eMMC 7.28 GB and DRAM 1024MB. It configures
+stdin/stdout/stderr as serial. The last visible text is UART BUS OFF!!.
+This proves early boot and TV-to-host serial reception, not successful
+Android startup, a usable interactive console or the current Android slot.
+
+Exact backed-up V013 MBOOT analysis explains the output cutoff:
+  0x274c0638: resolve getenv("UARTOnOff");
+  0x274c0664: compare its value with "off";
+  0x274c0674: print "\n UART BUS OFF!!!" when matched;
+  0x274c067c: call 0x2745cecc, which ORs 0x0f into the register at the
+              runtime RIU-base pointer plus 0x203d4c, then returns.
+The saved pre-flash environment already had UARTOnOff=off. This cutoff is
+consistent with deliberate UART disabling; it does not show where the
+later startup failure occurs. No re-enable command has been executed.
+Disassembly is under assets/research/g13-baremetal/:
+  mboot-uart-xrefs.txt, mboot-uart-gate.txt, mboot-uart-disable.txt.
+
+The completed five-minute capture contains five startup sequences, all
+ending at the same text: 7671 bytes, SHA256
+e9045ccf6ff96c58a304c2cb6e229bdc7771a576f044f0afad2252aa4b4d8689.
+Owner confirmation of manual versus automatic restart is pending; do not
+yet assign a watchdog or other specific reset cause.
+The receive-only test does not validate adapter TX wiring or logic voltage.
+The owner had reported RX/TX/GND connected; wire colors alone did not
+establish their identities. No signal-voltage measurement or independently
+verified G13 HDMI pin assignment has been supplied.
+
+BOUNDED UART ENTER TEST, 2026-10-31T22:18:36Z TO 22:20:11Z
+
+Exact V013 MBOOT main-loop analysis found an initial autoboot interruption
+check at 0x274c9634: tstc/getc, accepting CR (0x0d) or LF (0x0a). The saved
+CRC-valid environment has no bootdelay key; the code uses zero when absent.
+MstarProcess runs before this check; bootcheck/readKL/bootKL are registered
+for the later MstarToKernel phase. These observations justify an Enter-only
+test but do not prove input survives the earlier hardware UART disabling.
+See assets/research/g13-baremetal/mboot-autoboot-entry.txt,
+mboot-mstar-process.txt, mboot-process-table.txt and mboot-serial-input.txt.
+
+research/probe-uart-enter.py opened the existing FTDI port exclusively at
+115200 8N1, no flow control, DTR/RTS false. It waited for a recognizable
+startup, then sent only CR for a twelve-second window, at most 20 per second.
+It sent 216 CR bytes, no console commands, break signals, flash, erase or
+environment-write commands. All transmission then stopped; the remainder
+of its 95-second session was receive-only. The port closed successfully.
+Artifacts:
+  assets/research/device/uart-enter-20261031T221836.592197Z.bin
+  assets/research/device/uart-enter-20261031T221836.592197Z.jsonl
+The raw log contains 3287 bytes and two startup sequences. The first began
+at approximately 22:19:00Z; some characters became corrupted while CR was
+being sent. After UART BUS OFF, individual received CR bytes tracked the
+transmitted CRs (210 receive chunks contained exactly one CR). No prompt or
+command response appeared. The following receive-only startup was readable
+again and ended at UART BUS OFF as before. Echo alone is not evidence of
+TV input: wiring/loopback or signal contention must be checked first.
+No more serial transmission is planned until wire-to-HDMI-pin assignments
+and adapter TX identity are clarified. A question was sent to the owner.
+
+The stock restoration target was rehashed locally during this investigation:
+  assets/backups/g13-v013-stock-20261031/init_boot_a.img
+  size: 8388608 bytes
+  SHA256: ba21e944050398f71b9d137f4c569e930dd912f94aa50d44392aa94f61dfa0b9
+It matches the preserved backup. Restore only this image once bootloader
+Fastboot is available and the current TV/path/partition are verified, then
+perform a normal reboot. No restoration has yet been performed.
+
+OWNER WIRING CLARIFICATION AND ALTERNATIVE ENTRY ANALYSIS
+
+The owner reported, tentatively, HDMI 14 -> adapter RX, HDMI 2 -> adapter TX,
+HDMI 11 -> adapter GND, and confirmed using a cut HDMI cable. The observed
+readable logs establish reception and an adequate voltage reference, not
+the independence of the candidate TV RX conductor. Standard Type-A HDMI
+pin 2 is TMDS Data2 shield, pin 11 is clock shield, and pin 17 is DDC/CEC
+ground. A cut cable may bond shields to ground; this remains a hypothesis
+until continuity is measured with the cable isolated at both ends. The
+candidate service pinout is not an independently verified G13 schematic.
+Reference for standard pin functions, not this TV's service assignment:
+  https://docs.waveshare.com/Displays/LCD/HDMI
+
+Further exact V013 bootloader analysis:
+- do_usb_bin_check builds `ustar /MstarUpgrade.bin` by default. do_ustar
+  at 0x27421a74 calls firmware_image_header_authendication at 0x2745893c
+  through the success path at 0x274223c4. A nonzero authentication result
+  goes to the firmware-header authentication failure path. The routine
+  loads the header and obtains the public key; the loader also contains
+  secure-upgrade format checks and segmented loading. A raw partition
+  image or arbitrary plain-text upgrade script is not a validated package.
+- udstar /MstarDebug.script exists as a console command (command table
+  0x276b1f24, handler 0x27421488). No automatic startup invocation has been
+  identified. Merely placing this file on USB is not an established entry.
+- Network commands exist, including mstar/auto_update.txt, DHCP and TFTP.
+  do_mstar starts Ethernet with estart, then DHCP if ipaddr is absent.
+  The saved environment has upgrade_mode=null, serial stdin/stdout and the
+  ordinary mmc bootcmd; no ipaddr/serverip are set. No automatic network
+  recovery invocation has been established.
+- Saved usb_auto_upgrade=enable does not bypass package authentication or
+  establish automatic debug-script execution.
+New disassembly: assets/research/g13-baremetal/mboot-ustar-complete.txt,
+mboot-usb-header-auth.txt, mboot-usb-net-xrefs.txt, mboot-mode-selection.txt.
+
+The available V033 ZIP remains an AB OTA payload for G13; it has not been
+validated as a bootloader USB service package. Public search did not locate
+an exact T221T10 service package. TCL's Q3 support page exposes manuals;
+its self-repair page directs owners to support to request repair manuals:
+  https://support.tcl.com/en_US/q3k-series
+  https://support.tcl.com/us/self-repair-options
+No replacement image, USB package or additional TV command was written.
+
+ETHERNET TEST, 2026-10-31T22:24Z
+
+The owner connected Ethernet directly to the laptop and confirmed TV power.
+The known USB Ethernet interface enu1u2 established carrier; NetworkManager
+activated the existing Wired connection 2 profile at 192.168.77.1/24.
+An incoming-only tcpdump capture ran for 145 seconds alongside a 145-second
+receive-only UART capture. UART obtained 3070 bytes, including two readable
+startup sequences ending at UART BUS OFF. No UART bytes were transmitted.
+
+No incoming Ethernet packets were captured. Kernel interface RX counters
+also remained at zero bytes/packets. Three pings to 192.168.77.2 received no
+replies; neighbor resolution did not establish a TV MAC. Tcpdump reported
+0 captured, 10 received by filter and 0 dropped; the incoming-only pcap is
+24 bytes (header only). Its exit 124 was the intentional SIGINT timeout.
+This establishes no network recovery interface during this interval, not
+the absence of Ethernet support in every possible boot mode.
+
+Artifacts and hashes:
+  assets/research/device/g13-recovery-ethernet-20261031T2224.pcap
+  assets/research/device/g13-recovery-ethernet-20261031T2224.json
+  assets/research/device/uart-20261031T222400.057371Z.bin
+Both listeners finished and closed. Stock init_boot_a restoration remains
+pending a usable control interface. No USB stick was connected to the laptop
+or modified during this test.
+
+UART RECEPTION RECHECK, 2026-10-31T22:32Z TO 22:38Z
+
+The owner reported that the isolated cut cable had neither pin 2-to-11 nor
+pin 2-to-14 shorted, then confirmed HDMI/adapter reconnection and TV power.
+The 110-second receive-only capture uart-20261031T223245.974730Z.bin obtained
+only two NUL bytes. A subsequent 240-second receive-only capture,
+uart-20261031T223458.621879Z.bin, contained 14 non-text bytes at 22:38:28Z
+(13 NUL bytes and one FF), without any startup banner. During that interval
+the owner confirmed unplugging mains and reconnecting, rather than merely
+using the remote or TV button. The laptop continued to enumerate the FTDI
+adapter; the inspected kernel log had no USB reset/disconnect/error events.
+
+This does not establish a TV failure stage or a defective adapter. In earlier
+captures, boot text preceded UART BUS OFF; that later software gate alone
+does not explain losing all early text after a fresh mains start. The next
+requested physical test is to unplug mains, remove adapter TX from candidate
+HDMI pin 2, retain the previously working RX/GND connections, then reconnect
+mains while receiving. TX removal and that test's outcome remain unconfirmed.
+No serial bytes have been transmitted since the bounded 22:19 Enter test.
+All capture files are under assets/research/device/.
+The 240-second capture subsequently completed with exactly 14 bytes and
+closed the serial port. The owner chose to repair the cable first; no new
+listener or transmit test was started while that physical work is pending.
+
+UART RECEPTION RESTORED, 2026-11-01T01:16Z
+
+After a later interval when no USB serial device was visible to this session,
+the FTDI AU0563JT reappeared as ttyUSB0 (USB path 1-1.3). With no other capture
+process running, capture-uart.py opened it at 115200 8N1, receive-only, for
+600 seconds starting 01:13:43Z. The owner subsequently reported output.
+
+At 01:16:11Z, assets/research/device/uart-20261101T011343.510406Z.bin held
+1550 bytes: some initial non-text bytes followed by a readable UART_115200 /
+AC_ON startup, RAM training, OP-TEE/reeloader and BL3-1, MBOOT A selection,
+U-Boot 2011.06 (Aug 14 2025 - 23:40:21), eMMC HS400 5.1 / 7.28 GB,
+DRAM 1024MB, serial stdin/stdout/stderr, and UART BUS OFF!!. The listener
+was still running at this observation. No UART writes occurred.
+
+TV-to-laptop reception works again. The UART cutoff agrees with the exact
+V013 gate analysis above; it does not locate the later startup failure.
+There is no prompt, verified input path, or evidence of successful Android
+startup in this capture. RX/GND-only wiring with TX disconnected was requested;
+the owner's final repaired conductor-to-pin mapping has not been confirmed.
+The stock init_boot_a restoration remains pending a working control interface.
+
+At approximately 01:18Z, the owner clarified that adapter TX was connected
+during the restored readable reception, but was unsure of the remaining
+assignments. The owner then reported no voltage between TX and GND. A question
+is pending about USB power, isolation of TX from HDMI/TV, and DC meter mode;
+no adapter output voltage or failure has yet been established. The capture
+continued receive-only, with three readable startup banners and three UART
+BUS OFF occurrences (4643 bytes at the subsequent snapshot). Whether these
+were manual or automatic restarts remains unconfirmed. No new transmission
+or TV configuration change was performed.
+
+INTERACTIVE INPUT INVESTIGATION, 2026-11-01T03:21Z ONWARD
+
+The owner reported receiving logs in Screen but no apparent command response,
+then explicitly confirmed that the UART cable had been tested and works.
+Treat the adapter/cable as working for further investigation. No additional
+adapter loopback or voltage check is requested.
+
+Screen session 31845.tv-uart remains attached on ttyUSB1. Read-only inspection
+of screen-uart-20261101T031604Z.log found 9230 bytes, six UART_115200 startups,
+six UART BUS OFF occurrences and no << MT5867 >># prompt. Screen logs do not
+establish exactly which keys the owner sent or when. No bytes were injected
+and the session was left open.
+
+The known V013 UART shutdown remains a TV-side candidate for loss of input;
+its exact RX effect is not established. HDMI pin 2 remains related-board
+evidence, not a confirmed G13 receive route. No alternative pin was verified.
+The RIU offset 0x203d4c corresponds to index 0x101ea6. An older SigmaStar
+SSD202D register document describes its low nibble as a controller selector
+for both PM_UART_RX/TX, but this is another SoC and does not prove the G13
+meaning of selector 0xf. Additional pinned TCL mt5867 source files are saved
+with hashes under assets/research/g13-baremetal/uart-gate-source/; the fetched
+kernel setup files did not identify this selector's values.
+
+EXACT V013 UART-ENABLE ENTRY ANALYSIS, 2026-11-01 UTC
+
+Read-only investigation; Screen was left running and no serial bytes, TV
+commands, boot changes or partition writes were performed. The owner confirms
+this TV has a single physical push button, not a joystick. At the final log
+inspection screen-uart-20261101T031604Z.log held 16929 bytes, 11 UART_115200
+banners, 11 UART BUS OFF messages, and no << MT5867 >># prompt. Manual versus
+automatic restarts is still unestablished.
+
+All addresses below refer to exact stock MBOOT.img, with VA = file offset +
+0x273fdc00. SHA256:
+643058879b84d044dea58a4572bd9ade1cc3140f3d3357eeaabae53be32ec382
+Disassemblies and offline-emulation results: assets/research/g13-uart-entry/.
+
+1. UART gate and ordinary console entry:
+   console_init_r at 0x274c04c8 reads UARTOnOff. Its off branch prints the
+   observed message and calls 0x2745cecc, which ORs 0xf into RIU+0x203d4c
+   (index 0x101ea6). Exact HAL_UART_Connect at 0x2762587c uses that same
+   selector for port 0, mapping device enum 16 to selector 15. The older
+   MStar-authored drvUART.h identifies enum 16 as E_UART_OFF (UART Disable):
+   https://raw.githubusercontent.com/Benjamin-Dobell/kogan-tv-gpl/master/MBoot/MstarCore/bsp/edison/include/drvUART.h
+   Local reference edison-drvUART.h SHA256:
+   4407c0a92b588d573bbefca81396ed00e8dd3e517a6840ab1805dc40caee9f82
+   This strongly supports a hardware port-disconnect interpretation, including
+   RX, rather than merely suppressed printf. Exact live RX behavior and the
+   G13 HDMI RX pin assignment remain unmeasured.
+
+   main_loop checks CR/LF after console initialization. Its abort path at
+   0x274c974c calls 0x274bff8c (clears a RAM log-control flag) and 0x274c762c
+   (hush parser setup). Neither entry routine reconnects the hardware mux.
+   Do not infer that repeatedly pressing Enter after UART BUS OFF can enable
+   UART. Do not send blind setenv commands. An earlier scratch summary named
+   0x274c7928 as the first call; exact disassembly shows 0x274bff8c instead.
+
+2. A concrete physical-key entry exists:
+   get_boot_mode_from_keypad at 0x2742b130 reads msKeypad_GetKey and maps key
+   0x15 to boot mode 12. do_bootcheck dispatches mode 12 to 0x2742bc30:
+     setenv UARTOnOff on
+     saveenv
+     print "Opening UART now"
+   This saves an environment change; the handler does not itself restore the
+   hardware mux or reboot. The intended observable effect is on a subsequent
+   startup, if the boot reaches this handler and saveenv succeeds. It is not
+   an ASCII control character or a code to send on UART. The similarly valued
+   IR upgrade-bootloader command is a different, potentially destructive path.
+
+3. Important correction: the selected board-na.ini keypad map does NOT prove
+   which keys early MBOOT sees. Exact MBOOT has its own compiled table at
+   0x276a43d8: channel 0 enabled, SAR 0; other channels disabled. Thresholds:
+     0f 2e 4c 70 91 ab c4 e7
+   Keycodes:
+     74 15 04 16 ff ff ff ff
+   msKeypad_Init at 0x27494234 retains this table when keypad_select is absent.
+   Both CRC-valid 64-KiB MPOOL environment copies at 0x2e0000/0x2f0000 contain
+   114 variables, UARTOnOff=off and db_table=1, but no keypad_select,
+   keypad_offset or keypad_size. The old mboot-environment-hardware.json is a
+   FILTERED 51-variable report; absence in that report alone proves nothing.
+   MstarDrvInit calls keypad initialization after its init-command loop;
+   that loop's common registration adds initDbgLevel and the board-specific
+   registration at 0x274a03c0 is empty. The compiled map is therefore a strong
+   candidate for the startup path, but current RAM/table contents have not
+   been read from the TV. Later DB/configuration paths can set keypad fields.
+
+   Unicorn executed the exact ARM key-read routine 0x27494084 for every ADC
+   value 0..255, with compiled table, SAR0 selected, and the ADC hardware call
+   0x27622c38 replaced by ten identical readings per case. All calls returned.
+   Result in keypad-emulation.json:
+     ADC   0..29  -> key 0x74 (Power / held USB-upgrade path)
+     ADC  30..60  -> key 0x15 (UART-on boot mode)
+     ADC  61..93  -> key 0x04
+     ADC  94..127 -> key 0x16
+     ADC 128..242 -> key 0xff, status 1
+     ADC 243..255 -> no key, status 0
+   This validates software decoding, not a physical voltage/resistor value.
+   ADC reference, button connector pinout, pull-up network, and whether that
+   connector reaches SAR0 need hardware identification. Do not prescribe a
+   fixed voltage or resistor from these ADC counts alone. A single Power
+   switch is not demonstrated to produce the second analog key by timing.
+
+4. IR is different from older public MStar examples:
+   Exact dynamic IR boot-mode function 0x27429b98 returns only modes
+   [2,9,4,8,10,11] for its first six configured command positions (table at
+   0x27641f5c). Later positions return normal/unknown. No UART mode 12 is
+   exposed by this dispatcher. An older GPL source's IR_UART_ON_KEY switch
+   is not applicable evidence for this exact binary. No normal-remote UART
+   key sequence was found. Previous USB-script investigation likewise did
+   not establish an automatic unsigned UART-enable script path.
+
+Next concrete hardware investigation: identify the small button/IR board and
+its connector with power disconnected, then determine its KEY/SAR signal,
+ground, pull-up and ADC reference before designing a reversible resistor
+substitution for the second key range. No specific connector pin or resistor
+value has been established, and no wiring change has been attempted. If successful,
+allow the UART-on environment save, return the button circuit to normal and
+start again to observe later boot and attempt an ordinary boot interrupt.
+Recovery priority remains restoring only exact stock init_boot_a once a
+verified control interface is available; this analysis did not recover it.
+
+OWNER BOARD PHOTOS, 2026-11-01 UTC
+
+Inspected Downloads/20261031_203912.jpg (overview) and 20261031_203952.jpg
+(button/HDMI closeup). Exact copies and SHA256 provenance are retained under
+assets/research/g13-board-photos-20261101/inspection.json. Visible markings:
+TPD.MT9221T.PB771 (T), 40-MT21TB-MPC2HG, MT21TB, MT9221. The last character
+in MT21TB is B; an initial web query used T8 before resolving the marking.
+
+Correction to the proposed separate-button-board investigation: this unit's
+single switch is directly on the MAIN BOARD, marked KEY / GLK1. In the
+overview it is along the lower edge, just right of the red SPK_R connector
+and left of the large panel ribbon. Its contacts are the first candidate
+to map for a reversible analog-key resistor test. No separate key-board
+connector is required on the photographed arrangement.
+
+The photos also show mains and logic on the same PCB, with the HOT region
+outlined and labelled. Keep mains and all external power-capable cables
+disconnected for continuity/resistance work around the button; avoid the
+HOT supply section and bulk capacitor, which can retain charge. Do not
+attach a laptop ground to the primary-side ground or the bulk capacitor.
+
+The unpopulated CK1 footprint adjacent to GLK1 is marked EXT-BT. It is not
+an identified UART header. CNB2/PWRUP at the other side has GND/12V markings;
+it is not a UART connection either. No confirmed TX/RX-labelled header was
+identified on the visible face. The button's metal frame/mounting lugs are
+not automatically its switch contacts or the SAR signal. The photo does
+not establish which pad is input or the pull-up's value.
+
+Search found a TCL-authored related MT21T7/MT21TB7 service schematic at
+https://www.scribd.com/document/957426498/Manual-Service-MT21TB7-AG
+with KEY_IN routed to SAR0 and a resistive KEY circuit, but that is not the
+photographed MT21TB/PB771 revision. Do not transplant its RJ designators or
+resistor values. No exact-revision manufacturer schematic was obtained.
+Generic seller manuals and unrelated forum schematics were not accepted
+as pinout evidence.
+
+Recommended next step: with the set unpowered, identify GLK1's actual
+electrical contact pair by a change from open/high resistance when released
+to near zero when pressed. Map each contact to cold-side logic ground
+(for example, the HDMI shield after verifying its ground connection).
+Record released/pressed readings. A close side/underside view of the switch
+area can establish accessible contact pads if the present angle hides them;
+do not remove the heatsink or disconnect the panel ribbon merely to inspect
+the button. Only after the input and pull-up are established should a
+temporary resistor be selected. This is the preferred hardware candidate
+because exact V013 contains the UART-on key branch; it remains untested on
+this TV and might not work if the runtime key mapping differs or bootcheck
+is not reached. Direct eMMC programming remains a more involved fallback
+requiring an appropriate programmer and confirmed board test points.
+
+No serial session was changed, no bytes were transmitted, and no hardware
+or firmware modifications were made during photo inspection.
+
+EMPTY FAT32 STICK AND FRESH SERIAL CAPTURE, 2026-11-01T04:09Z
+
+After the owner-authorized SanDisk format (label EMPTY, UUID 9EDC-3795),
+the owner reported different behavior while attempting recovery with the
+empty stick, then described the visible screen as the "Unsafe" message.
+Exact wording and boot stage are not established. This does not prove
+Android recovery or Fastbootd entry. The prior Screen log still contains
+early startup sequences ending at UART BUS OFF; no recovery prompt was seen.
+
+Rechecked exact V013 evidence: usb_bin_check at 0x274a56c4 looks for
+/MstarUpgrade.bin (or ForceUpgradePath); a missing file returns failure.
+ota_zip_check_usb at 0x274a1634 requires /update_signed.zip before constructing
+the recovery request. The previously crafted label selects the installed
+recovery's Fastbootd branch in offline parser emulation, not an independent
+USB boot image. The service updater remains a distinct authenticated package
+path. Available V033 metadata explicitly says ota-type=AB, pre-device=G13;
+that ZIP is not a validated MstarUpgrade.bin service package.
+
+At the owner's request, rotated logging within existing root Screen session
+31845.tv-uart, without replacing it or starting a competing reader. Current:
+  assets/research/device/screen-uart-empty-usb-20261101T040907Z.log
+Confirmed Screen holds both the new log and /dev/ttyUSB1; serial settings
+remain 115200 8N1 with software/hardware flow control disabled. No assistant
+serial bytes were sent. The owner was told capture is ready for another
+empty-stick entry attempt. Its result is pending; no TV partition was written.
+
+EMPTY-STICK RESULT: owner confirms "Your device has been unlocked ..." and
+footer "System will boot up continously". Fresh capture contains one early
+startup (1534 bytes), ending at UART BUS OFF, without a console prompt. The
+visible warning demonstrates progress beyond UART gating but does not prove
+USB file discovery, Android recovery entry, or a particular failure stage.
+Exact AVBPanelLogo at 0x274c7714 runs avbShowStatus 0 0 1 1 2 for orange.
+The avbShowStatus display routine loads the corresponding JPEG and returns;
+no explicit button-confirmation wait was identified in this routine. A
+persistent warning could be the last rendered frame after a later failure.
+Disassembly: assets/research/g13-magisk-v31.1-20261031/mboot-avb-warning-display.txt.
+Observation: assets/research/device/empty-usb-warning-observation-20261101.json.
+Screen remains recording; no serial transmission or TV state change was issued.
+
+Correction to the immediately preceding capture count: 1534 bytes/one startup
+was the first read. The saved observation JSON was taken later and contains
+3068 bytes/two startups. Do not infer automatic reboots from these counts;
+the owner was performing physical attempts. The capture is still appending.
+
+G13 STICK RE-PREPARED ON EXPLICIT REQUEST, 2026-11-01T04:12Z
+
+The owner requested a correctly targeted stick for the new TV. SanDisk
+03046508112725103421, UUID 9EDC-3795, was identified on the laptop. The empty
+FAT32 filesystem passed a read-only check. Exact V013 MBOOT, stock init_boot_a,
+extracted recovery and libc hashes were freshly verified against the known
+backup artifacts. New per-attempt emulations using this UUID constructed
+the recovery arguments and selected Fastbootd in recovery main's option table.
+
+Copied only the empty 22-byte update_signed.zip marker and patched the three
+volume-label fields to LF,--fast,LF,spaces. Original/replacement sectors were
+saved. Independent raw FAT audit verified UUID, matching FAT/BPB copies,
+label fields, sole filename/content hash, cluster chains and free count.
+The stick was flushed and unmounted. Physical entry remains unproven.
+This still depends on installed recovery and is not an independent repair.
+No V033 OTA, G06 image, raw partition image or updater script was copied.
+
+Current instructions: research/recovery-probe/G13_CURRENT_USB.txt.
+Evidence: assets/research/g13-recovery-usb-20261101T041229Z/.
+The existing Screen log was left in place so the owner's tail -f continues
+working; at preparation completion it had 4879 bytes/three startups.
+No TV partition was written and no assistant UART bytes were transmitted.
+
+G13 USB RETRY RESULT, 2026-11-01T04:15Z
+
+Owner reports the same unlock-warning screen after the newly verified stick.
+New log bytes 4879..6413 comprise one 1534-byte startup ending at UART BUS
+OFF; no prompt or later recovery logs appeared. Rechecked exact MBOOT:
+USB-entry BCB.command is boot-recovery (constant at 0x27661b24), while the
+FAT label injects --fast into BCB.recovery. This is the verified stock path;
+it does not require the stick to supply a separate boot-fastboot command.
+The actual TV BCB remains unreadable, so do not claim its recovery flag
+has been set. USB trigger not reached/detected and subsequent recovery
+startup failure are both still possible. The modified init_boot dependence
+remains a hypothesis rather than a captured failure diagnosis.
+Evidence: assets/research/g13-recovery-usb-20261101T041229Z/physical-trial.json.
+
+STANDBY COMPARISON AND STOCK-RECOVERY CONTROL, 2026-11-01T04:22Z
+
+Owner can reliably reach standby by holding physical Power while connecting
+mains. Holding Power from standby gives the unlock warning without the prepared
+stick, but only backlight with it. This clarifies the preceding trial report.
+
+Exact V013 AVBPanelLogo (0x274c7714) calls isBootToRecovery (0x2742b370) at
+0x274c7738 and branches past the orange-warning drawing when it returns true.
+The observed difference is therefore consistent with recovery being selected;
+it does not prove the current BCB contents or successful recovery startup.
+UART still ends at UART BUS OFF and cannot identify the later failure stage.
+
+Prepared a control on the connected SanDisk 03046508112725103421: changed
+only the three FAT32 label fields from LF,--fast,LF,spaces to ordinary RECOVERY.
+UUID remains 9EDC-3795; sole file remains the unchanged empty 22-byte
+update_signed.zip. Partitioning and file contents were preserved. Sector
+backups/readback, raw FAT audit and read-only fsck passed. Flushed/unmounted.
+
+Exact V013 label/BCB and libc parser emulation selects neither --fast nor
+--show with this label. This tests the stock USB-update recovery path without
+an injected mode option. An update error from the empty ZIP would be expected
+if recovery processes it, not evidence of firmware repair. Physical result is
+pending. Both paths still depend on installed recovery components.
+
+Evidence: assets/research/g13-stock-recovery-control-20261101T042241Z/.
+Instructions: research/recovery-probe/G13_CURRENT_USB.txt.
+Screen 31845.tv-uart remains running on ttyUSB1, appending to the same
+screen-uart-empty-usb-20261101T040907Z.log (16172 bytes before the new trial).
+No assistant UART bytes were sent and no TV partitions were written.
+
+PLAIN-LABEL CONTROL RESULT, 2026-11-01T04:25Z
+
+Owner reports "only backlight again" with RECOVERY label and empty ZIP.
+Captured log bytes 16172..21051 (4879 bytes) include three early startups,
+three UART BUS OFF messages and no console prompt. Standby/power-management
+text is also present. There are no per-start timestamps establishing which
+sequence is this exact attempt, or whether any restart was automatic.
+The outcome weakens an explanation specific to --fast/Fastbootd: both it
+and the plain stock-update recovery control fail visibly. The current BCB
+and later execution stage remain unreadable; shared init_boot involvement
+is still a hypothesis, not a captured failure diagnosis.
+
+Read-only sysfs inspection found the adapter but no TV USB device; with the
+stick in the TV this does not establish whether TV USB transport would work
+with a laptop cable. Screen 31845 still holds ttyUSB1 and the same log.
+No stick/TV writes, serial transmission or capture restart followed the result.
+Evidence: g13-stock-recovery-control-20261101T042241Z/physical-trial.json
+and physical-trial-serial.bin under assets/research/.
+
+Rechecked exact init_boot loading and authenticated ustar service-update
+paths. No established independent USB rescue payload is available. A fresh
+search for T221T10 and the exact board number did not locate a verified
+matching service package. Same-PCB listings for other models do not establish
+firmware compatibility. The UART-on physical-key candidate and subsequent
+restoration of exact stock init_boot_a remain the concrete local route;
+button contact/pull-up identification is still required before a resistor.
+
+USB-ONLY FOLLOW-UP, 2026-11-01T04:29Z
+
+Owner explicitly prefers to keep investigating USB. Respect that constraint;
+do not substitute a request for button-circuit work as the next step.
+The reconnected SanDisk was opened O_RDONLY and a 40-MiB prefix captured.
+This contains both FATs, root directory and the current one-cluster ZIP.
+Evidence: assets/research/g13-usb-reader-20261101/.
+
+New emulation executes the exact V013 fat_register_device (0x27444994),
+DOS partition parsing, and file_fat_read (0x27445a3c), using this actual
+snapshot as the block-device backend. Only block transport, heap allocation
+and console output are stubbed. It registers partition 1 successfully and
+reads /update_signed.zip as the expected 22 bytes and SHA256 8739c76e...76d85.
+The absent-file control returns -1. This validates actual MBR/BPB/FAT/LFN
+parsing, not USB hardware enumeration or a recovery boot. It removes a gap
+in earlier label/BCB-only emulation. Source:
+  research/recovery-probe/emulate-g13-fat-read.py
+  fat-reader-validation.json and fat-reader-absent-control.json in evidence.
+The preliminary fat-reader-first/shortname reports are incomplete-harness
+runs: the synthetic block descriptor initially lacked its block-size field.
+They are NOT evidence of a firmware or stick defect. Corrected descriptor
+uses block size 512 at +0x14 and the actual disk LBA count at +0x10.
+
+Official project 20046/current V013 metadata was refreshed: HTTP 200 again
+offers V8-T221T10-LF1V033, size 1379019088, MD5 9747ffa60fd630535da5c8a749ee7fdb.
+Extracted V013 recovery system/etc/security/otacerts.zip from stock vendor
+ramdisk. Its releasekey.x509.pem matches V033's certificate byte-for-byte.
+Certificate SHA256 c0a20db233dd94e171d055da5ac5560acafb540bfed532136caa600aeb9fc006.
+Verified V033's detached whole-file RSA/PKCS1v1.5 SHA1 signature against that
+stock public key, over its Android signed range of 1379017576 bytes. All ZIP
+entry CRC checks, full length, MD5 and known SHA256 pass. This supersedes the
+old note that OTA cryptographic verification had not been performed.
+  research/recovery-probe/verify-ota-signature.py
+  v033-verification.json, firmware-query-current.json in evidence.
+
+V033 is still an AB OTA, NOT an authenticated bootloader-service package.
+Its payload includes 19 partitions, including init_boot and mboot. It could
+be tried if installed recovery runs without visible UI, but cannot bypass
+a failure before recovery can process the ZIP. Owner was given a choice
+between preparing this full update and continuing bootloader-only USB work.
+Authorization was pending at this point; the subsequent acceptance and
+preparation are recorded below. No V033 files were put on the stick and no
+TV partition writes or serial transmissions were issued in this follow-up.
+Screen 31845 still owns ttyUSB1 and its existing append log.
+
+Other paths rechecked: V013 ustar reaches header authentication before
+loading its upgrade script; an arbitrary small MstarUpgrade.bin script is
+not validated by public examples for unrelated SoCs. The raw partial/super
+USB-to-eMMC command handlers exist, but no automatic invocation was found;
+handler availability alone does not provide a usable USB-only entry.
+Fresh public searches and TCL's Q3K support page did not establish an exact
+T221T10 service package. Public manuals page:
+https://support.tcl.com/en_US/q3k-series
+
+AUTHORIZED V033 USB PREPARATION, 2026-11-01T04:31Z
+
+Owner replied "let's try that" to the proposed official full V033 update.
+Reidentified SanDisk 03046508112725103421, UUID 9EDC-3795, ordinary RECOVERY
+label, unmounted. Preserved its partitioning and filesystem; replaced only
+the empty 22-byte update_signed.zip with the actual signed V033 archive.
+The old marker was archived to the attempt directory before replacement.
+New update_signed.zip: 1379019088 bytes, SHA256:
+  e3e51c77cbd1b55ce28c5190e19640d15ba8ba31d424f376b98515e6cd431fb9
+Copy-stream hash matched. After sync/unmount and block-cache flush, a full
+read-only-remount readback matched; fsck -n passed. Final state is unmounted.
+Original local V033 source remains mode0400. This is a full A/B OTA including
+mboot, not a standalone MstarUpgrade.bin; installed recovery must run for it
+to help. Physical trial and actual installation remain PENDING.
+
+Screen 31845.tv-uart and its existing log stayed untouched; initial log offset
+25126. No assistant UART transmission or host TV-partition write occurred.
+Owner procedure remains stable standby then insert USB and hold physical
+Power. Keep power/USB connected through any installation. If control returns
+after attempted V033 installation, check version/slot before considering the
+V013 init_boot_a rollback; do not create a cross-version combination blindly.
+Evidence: assets/research/g13-v033-usb-20261101T043110Z/.
+Current instructions: research/recovery-probe/G13_CURRENT_USB.txt.
+
+V033 USB TRIAL RESULT, 2026-11-01T04:33Z onward
+
+Owner reports the same behavior, then clarifies no text, only backlight and
+no blinking LEDs. Serial bytes 25126..28194 contain two complete 1534-byte
+startups, both U-Boot Aug 14 2025, ending at UART BUS OFF. Their log mtimes
+were 04:32:43 and 04:33:54 UTC. Owner explicitly confirms leaving the TV
+alone since this attempt began. This establishes an automatic restart during
+the V033 attempt; it does not retroactively establish automatic restarts in
+older trials where manual intervention was unknown. A timed log observer
+now records later changes in serial-observation.jsonl. Screen stays active,
+unchanged; the observer reads the log file only, with no UART transmission.
+
+No successful update/recovery entry is confirmed. A boot failure/watchdog
+reset is a candidate, not a captured fault diagnosis. UART gating hides the
+later stage. Do not infer no partition writes or unchanged slot metadata
+from these observations. ADB TCP port probe timed out, but laptop Ethernet
+was subsequently seen DOWN/NO-CARRIER, so this does not establish Android's
+network state. No TV USB device is enumerated at the laptop while the stick
+is connected to the TV; transport absence in this wiring is not diagnostic.
+
+USB service path rechecked in exact V013 MBOOT: custar at 0x274a2000 searches
+upgrade_image.pkg and related service package names before MstarUpgrade.bin;
+its package branches invoke ustar. The firmware header verifier reads the
+first 0x1000 bytes, takes a 0x100-byte RSA signature and authenticates 0x580
+bytes of header data, then the update path authenticates payload before
+executing upgrade commands. Secure_doAuthentication at 0x2745c1f8 returns
+failure when crypto is uninitialized or signature checks fail. No ordinary
+Android unlocked-state bypass was found in this verifier. These checks do
+not prove the absence of implementation bugs; no usable bypass is established.
+The OTA's Android signature does not make it this service-package format.
+Renaming a ZIP or raw partition backup is not a validated rescue method.
+
+Searches for exact T221T10 + MstarUpgrade.bin/IMG/pkg/upgrade_image did not
+locate a verified independent recovery package. Q3K official support page
+still provides manuals: https://support.tcl.com/en_US/q3k-series
+Other-model same-PCB repair listings are not compatibility evidence.
+The next established USB-only recovery route requires the signed service
+package for G13/T221T10/project 20046 from TCL or a validated exact source.
+Evidence: assets/research/g13-v033-usb-20261101T043110Z/physical-trial.json,
+physical-trial-serial.bin, custar-dispatch*.txt, secure-header-verifier*.txt,
+and secure-init.txt. USB contents and TV state were not changed by this
+inspection. The current stick still contains the authorized V033 OTA.
+
+SIGNED USB SERVICE IMAGE SEARCH, 2026-11-01T04:38Z
+
+Owner requested finding the signed USB service image for the NEW TV. No
+verified exact T221T10 / G13_2K_US / project 20046 package was located in
+the public sources checked. This is a search result, not proof that no
+such package exists. Findings and fetched source records are preserved in:
+  assets/research/g13-service-image-search-20261101/
+
+The stock V013 updater also uses upmptype=4 and upgradeConfigInterface.
+Fresh authenticated requests to that endpoint and upgradeIncrInterface,
+using the known platform/project and dummy device identifiers, both return
+V8-T221T10-LF1V033, the same 1379019088-byte AB OTA already verified locally.
+Responses include payload offset/size metadata, not a second service-image
+download. See upmptype4-responses.json. The PIN update interface requires
+an unknown manual code; no PIN guessing or external messages were attempted.
+
+Related service-format candidate, NOT validated for this TV:
+  https://blobmarketingsemp.blob.core.windows.net/website/drivers/V069_USB.zip
+Public announcement identifies T221T09 / V8-0003T09-LF1V069 and related
+S4K/S5K/V5C products:
+  https://t.me/tclupdates_discussion/267065
+Read-only HTTP ranges verified the archive directory contains exactly USB/
+and USB/upgrade_image.pkg. Archive length 1754476457 bytes; inner package
+uncompressed length 1753944496 bytes. First 64 KiB of the package were
+decompressed and inspected. Header includes REE_OFFSET_START=0x1000 and
+REE_OFFSET_LEN=0x688b0000; the following bytes do not expose a readable
+upgrade script or compatible-project list. These structural observations
+are NOT cryptographic verification or proof of compatibility. The complete
+archive was not retained, no package was copied to USB, and no flash was
+attempted. Evidence: v069-{header,tail,inner-prefix}.bin,
+v069-zip-directory.json, v069-prefix-inspection.json, telegram-v069.html.
+
+Official SEMP software listing:
+  https://www.semptcl.com.br/suporte/tcl/downloads?tipo=driver
+Its public /api/download?cat=tv&tipo=driver&search=32S5K endpoint currently
+lists V092 for 32S42/43S42/32S5K/40S5K/43S5K, pointing to:
+  https://blobmarketingsemp.blob.core.windows.net/website/drivers/V8-T221T09-LF1V092.zip
+Inspected first 64 KiB: this is an AB OTA, pre-device=G13, post-build
+TCL/G13_2K_GB/G13:14/UKN2.241110.001/AU13:user/release-keys, not a service
+package or G13_2K_US image. Queries for 32Q3K and T221T10 returned no entries.
+Evidence: semp-api-*.json, v092-prefix.bin, v092-ota-metadata.txt.
+
+Other public checks: Q3K official downloads contain manuals; no exact service
+package surfaced in indexed searches or the checked community catalog.
+The community catalog has no T221T10 entry and is not a trusted hash source.
+Telegram channel web search yielded a landing page, so it did not establish
+the absence of a post. Static cedock mirrors timed out even for a known
+existing V033 control. Alternate paths under an authenticated CDN URL
+returned 403 just like a nonexistent control; that is NOT proof of absence.
+Legacy celesw HTTP paths returned 404 and HTTPS had a hostname mismatch.
+
+TCL's own manual USB guide describes a file supplied by TCL support:
+  https://support.tcl.com/ca-gtv-setup-configuration/how-to-perform-a-manual-update-on-tcl-google-tvs
+Precise support request: a signed bootloader USB recovery/service package
+(upgrade_image.pkg or platform-equivalent), for G13_2K_US, T221T10,
+project 20046, board 40-MT21TB-MPC2HG / TPD.MT9221T.PB771(T), originally
+V8-T221T10-LF1V013. Supply the actual rear-label model and serial separately;
+owner reported 31Q3K, whereas consumer Q3K pages list 32Q3K. Request the
+service format explicitly because the V033 AB OTA cannot bypass installed
+recovery. No support message was sent on the owner's behalf.
+
+Serial follow-up snapshot: 32797 total log bytes, with 7671 bytes after the
+V033 trial start at 25126, five U-Boot banners and five UART BUS OFF messages.
+Last file mtime 04:37:52 UTC. Final snapshot and hashes are saved separately
+as physical-trial-serial-final.bin and final_* fields in physical-trial.json
+under assets/research/g13-v033-usb-20261101T043110Z/. The earlier two-boot
+snapshot remains intact. Screen PID 31845 still owns ttyUSB1 and the same
+append log; no competing reader or serial transmission was started.
+
+URGENT RECOVERY / ESP32 CANDIDATE, 2026-11-01 UTC
+
+Owner needs recovery today and is willing to attempt broader approaches.
+Available hardware: multimeter and an ESP32; no loose resistor/potentiometer.
+Owner can access the main board but asked for an explanation first. Explained
+that analog button code 0x15 saves UARTOnOff=on, then a later startup may keep
+UART enabled for a bootloader prompt and stock init_boot restoration. This is
+still an untested hardware trigger, not a promised recovery or measured pinout.
+
+Requested ESP connection to laptop USB only, with all GPIO disconnected, and
+unpowered identification of the actual KEY/GLK1 switch contacts (released high
+resistance, pressed near zero). No contact or voltage readings have arrived.
+Keep all mains/external cables disconnected for resistance measurements and
+avoid the board's HOT PSU section and stored-charge capacitor. Photos do not
+identify the electrical terminals versus mechanical frame with certainty.
+
+Prepared research/recovery-probe/esp32-dac-console.py. It uses esptool 5.x ROM
+read_reg/write_reg commands on classic ESP32 only, without flashing firmware
+or programming eFuses. It rejects the known FTDI TV-UART serial AU0563JT.
+GPIO25 DAC starts disabled, requires explicit set commands (codes 0..63),
+verifies register readback, and attempts to disable output on exit. It leaves
+the processor in its ROM downloader rather than launching old ESP firmware.
+Do not connect to the TV until its input/reference/pull-up and actual loaded
+DAC voltage are established. DAC source/sink impedance may prevent reaching
+the desired voltage under the TV pull-up; a nominal DAC code is not a measured
+voltage or proof this resistor-free approach works.
+
+Espressif ESP-IDF v5.5.1 DAC, RTC IO and register header sources plus offline
+range/mask/address checks are under assets/research/g13-esp32-uart-enable-20261101/.
+Source: https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/peripherals/dac.html
+Tool fetched: /nix/store/qyrqvcsim29vbrqkzr36as7dlqncrg9i-esptool-5.6.0/
+No ESP has yet been identified or written; hardware testing is pending.
+
+Further exact-decoder observation: 0x27494084 classifies each of ten ADC reads
+separately and accepts a key only when a bucket count exceeds nine. It does
+NOT average ten voltages. Plain unfiltered high/low PWM cannot be assumed to
+simulate the intermediate key; any PWM alternative requires demonstrated
+analog filtering and a steady voltage in the proper range.
+
+Live USB recheck showed SanDisk at the laptop and the FTDI adapter; no ESP or
+TV USB transport yet. Ethernet enu1u2 was down/no carrier. Screen PID 31845
+still owns ttyUSB1 and the same append log. New log text includes a power-down
+and startup; no new claim about manual versus automatic action for these
+later sequences. No assistant serial transmission, USB-media mutation or TV
+partition write occurred during this follow-up.
+
+FINAL USB-ONLY RECHECK, 2026-11-01T04:44Z
+
+Owner asked for one last USB attempt before the ESP/button route. Rechecked
+the exact stock MBOOT: no immediate ARM branch to do_udstar (0x27421488)
+was found in the inspected code range, and its sole aligned function pointer
+is the command-table entry at 0x276b1f30. Text references identify the command,
+its help and default /MstarDebug.script filename; no automatic invocation was
+established. This static scan is not proof against every dynamic invocation.
+The sita_P marker saves Pmode=1 and requests a data wipe/reboot; it does not
+restore init_boot. No new USB-only repair was justified by these checks.
+Did not stage a speculative script, factory-reset marker, or the unverified
+T221T09 service package. SanDisk contents remain the authorized V033 OTA.
+Screen PID 31845 still owns ttyUSB1 and the same append log. No ESP or TV
+write was performed. Evidence: assets/research/g13-usb-final-review-20261101/result.json.
+
+RECOVERY HANDOFF AUDIT, 2026-11-01 UTC
+
+Owner redirected investigation to standby/USB recovery. Full stage map:
+research/G13_RECOVERY_PATH.txt. New offline audit executes exact V013
+boot_mode_recovery, do_ReadKL up to AVB, and bootconfig conversion up to
+environment output with hardware/storage fixtures. Saved force_normal_boot=1
+is correctly replaced with 0 for recovery and transferred to bootconfig.
+Both normal and recovery controls pass. No actual AVB or kernel is emulated.
+
+Magisk v31.1 has an explicit recovery bypass that restores stock init when
+force_normal_boot is false and /system/bin/recovery exists. The latter is
+present in the vendor ramdisk; decompressing the patched CPIO's backup init
+gives byte-for-byte stock /init. RECOVERYMODE=false is not a force-normal
+override. Shared patched init loading alone therefore does not diagnose the
+recovery failure. Exact recovery main also initializes device/UI code before
+its later Fastboot mode loop; --fast does not bypass that shared startup.
+
+The precise runtime failure remains uncaptured. No new USB variant, TV
+write, UART transmission or Screen change was made. Evidence and source
+provenance: assets/research/g13-recovery-path-20261101/.
+
+BUTTON MEASUREMENT CORRECTION, owner report 2026-11-01
+
+The owner identified a switching contact pair and its ground side. Earlier
+reports of approximately 1.14 V, brief 0.4/0.8 V excursions and returns to
+zero were obtained with the multimeter in AC mode. Do not use those readings
+as the button's DC voltage, an ADC reference, or evidence of a failing rail.
+
+After changing the meter to DC voltage, the owner reports approximately
+3.3 V with the button released, 0 V throughout a press, and 3.3 V again on
+release, both in standby and with the backlight on. This supports an
+active-low button signal pulled up to 3.3 V. These are owner measurements,
+not independently captured waveforms. The exact photographed contact used
+and the final ground reference have not been recorded.
+
+The pull-up resistance/current, connection to SAR0, ADC reference and
+current runtime key table remain unverified. The released voltage alone
+does not establish any of those. The ESP32 variant has been requested;
+keep its GPIO disconnected from the TV pending identification and a
+validated electrical interface. No resistor value or injection voltage
+has been selected, and no TV or ESP write was performed in this follow-up.
+
+PASSIVE BUTTON-LOAD OPTION, owner report 2026-11-01
+
+The owner now reports having assorted resistors, superseding the earlier
+no-resistor inventory. The ESP module is tentatively ESP32-WROOM-32 but has
+not been identified electronically or connected to the TV by the assistant.
+Prioritize a passive resistor option over the ESP DAC if practical.
+
+Requested a loose, meter-verified 10 kOhm resistor for a diagnostic load
+across the identified button signal and logic ground, with the button
+released. This is not a selected UART-trigger resistor. A 10 kOhm load on
+the reported 3.3 V node limits its current to about 0.33 mA. Once measured,
+the loaded DC voltage can estimate the existing pull-up using
+R_pullup ~= R_test * (V_unloaded / V_loaded - 1), assuming a stable source
+and approximately resistive pull-up. A second load can check that model.
+The owner subsequently confirmed a loose resistor reads 10 kOhm on the
+multimeter. A loaded button-signal voltage is not available yet.
+ADC reference and voltage-to-key mapping still need separate validation.
+No physical load test, boot-state change or device write was performed here.
+
+10 kOhm BUTTON LOAD RESULT, owner report 2026-11-01
+
+The owner now reports 2.238 V in standby and 2.234 V after turning on with
+the measured 10 kOhm resistor across the button signal and ground. Using
+the earlier approximate unloaded 3.3 V, a resistive pull-up model gives
+4745 and 4772 ohms respectively, consistent with a nominal 4.7 kOhm pull-up.
+These are inferred equivalent resistances, not a directly measured part.
+The model predicts approximately 0.572 to 0.574 V with a 1 kOhm load; this
+is not yet a confirmed UART-trigger voltage. Requested a loose 1 kOhm
+resistor, with no wiring change requested at that stage.
+
+The exact V013 SAR wrapper 0x27622c38 reaches 0x27622fdc, whose instruction
+at 0x27623028 extracts bits 2..9 of the selected hardware sample. This
+supports the established 8-bit decoder input but does not itself establish
+the analog reference. Public references to other MStar/SigmaStar parts
+are not proof of this TV's reference setting. Physical SAR routing and
+current runtime key mapping are still unverified.
+
+Owner observations, equivalent-circuit calculations and limits:
+assets/research/g13-uart-entry/button-load-measurements-20261101.json.
+No UART transmission, host TV-partition write or ESP32 connection was made
+by the assistant. No successful UART-enable trigger has been observed.
+
+1 kOhm BUTTON LOAD / STALE UART CAPTURE, 2026-11-01T08:06Z
+
+Owner now reports 0.56 V using the 1 kOhm resistor. This is close to the
+predicted 0.572 to 0.574 V and supports the approximate divider model. The
+operating state, exact resistor measurement and whether it was attached
+before the most recent mains startup are awaiting clarification. Voltage
+alone does not establish that MBOOT recognized key 0x15 or saved UARTOnOff.
+
+Read-only process/descriptor inspection found Screen PID 31845 alive, with
+fd 5 pointing to /dev/ttyUSB1 (deleted). Its log is still
+assets/research/device/screen-uart-empty-usb-20261101T040907Z.log, 54549 bytes,
+last modified 2026-11-01T04:51:33Z, ending UART BUS OFF!!. It has not captured
+the present test. No current ttyUSB0/ttyUSB1/ttyACM0 or /dev/serial/by-id is
+visible, including through /proc/1/root. Screen and its log were not changed;
+no competing reader or serial transmitter was started. Re-establish the
+known adapter's enumeration and capture before judging a controlled trial.
+
+Owner subsequently confirmed the 1 kOhm resistor was connected before
+plugging the TV into mains, and then reported turning the TV off. This
+establishes presence from power-up, not actual detection of the hidden key
+or a completed UARTOnOff save. Whether "off" means standby or disconnected
+mains was not specified. A fresh read-only check still found no visible
+serial adapter and the same stale Screen descriptor/log; capture has not
+been restored and no new serial bytes were sent.
+
+UART CAPTURE RESTORED, 2026-11-01T08:14:50Z
+
+After the owner reconnected the laptop USB connection, FTDI AU0563JT
+reappeared as /dev/ttyUSB0. Kernel records show its former disconnect
+during host suspend/resume and its new enumeration at 08:14:39Z. The stale
+Screen 31845.tv-uart was closed; its historical log was preserved.
+
+At the owner's request, research/capture-uart.py now owns the adapter in
+receive-only mode, 115200 8N1, both flow-control modes off, DTR/RTS false.
+Settings were read back with stty. Python PID 46710, exec session 85798,
+duration 1800 seconds, raw log:
+assets/research/device/uart-20261101T081450.375586Z.bin.
+The log was initially empty. No serial bytes were transmitted. This is
+capture readiness, not evidence that the 1 kOhm key enabled UART. Screen
+is no longer running; do not start another serial reader over this capture.
+
+RESISTOR TRIAL SERIAL RESULT, 2026-11-01T08:21:17Z
+
+The restored capture now holds 6420 bytes: four UART_115200 / U-Boot
+startups, four UART BUS OFF messages, one intervening Power Down message,
+and no console prompt. All four report Select mboot A and the same Aug 14
+2025 U-Boot build. Persistent UART enable is not demonstrated. The 0.56 V
+load measurement does not prove that this board decodes it as key 0x15.
+Manual versus automatic restarts and whether the owner removed the resistor
+before the latest startup are not established; clarification was requested.
+
+Snapshot and counts:
+assets/research/g13-uart-entry/resistor-trial-20261101T082117Z/.
+Receive-only capture PID 46710 remained active; no serial transmission or
+host TV-partition write occurred. A recheck of do_bootcheck confirms that
+project-id, EEPROM/OAD and IR results can precede the keypad call at
+0x2742bd90. No observed state establishes such a bypass on this TV, and a
+pending recovery request must not be asserted as the failure cause.
+
+UART ENABLE PHYSICALLY OBSERVED, 2026-11-01T08:27:00Z
+
+After the owner said the resistor was now in place, the same live capture
+had grown to 27149 bytes. Seven startup banners are present. Only the first
+four have UART BUS OFF; startups 5 and 6 have full later MBOOT output and
+Starting kernel followed by Linux messages. Startup 5 reports keypad 0xFF,
+startup 6 reports 0x74 (held only 0.8 seconds), and startup 7 explicitly says:
+
+  fore uup u8KeyPad_KeyVal [0x15]
+  Saving Environment to MMC...
+  Writing to MMC(0)... 128 blocks written: OK
+  128 blocks written: OK
+  done
+  Opening UART now
+
+Startup 7 subsequently runs standby preparation and prints Power Down.
+This demonstrates the physical key-0x15 handler and successful reported
+environment writes. Continued logging across startups demonstrates that
+UART output is now enabled. Exact resistor value/placement and the manual
+versus automatic cause of each restart are not independently recorded.
+Do not repeat the enable experiment now; return the button circuit to normal
+with mains disconnected before pursuing a normal bootloader interruption.
+
+Startups 5 and 6 select MBOOT A, retain the Aug 14 2025 banner, report
+init_boot_a hash mismatch against its AVB descriptor, select unlocked/orange
+slot a anyway and start Linux. Both also report a nonempty recovery field.
+Sparse kernel output includes SAR5 eMMC Warn near 6.6 to 6.9 seconds, then
+another startup. Without knowing the owner's physical actions, neither
+this warning nor the reset proves a fault cause. The AVB mismatch alone is
+not a demonstrated blocker because the kernel is entered afterward.
+
+Raw snapshot SHA256:
+cdfa3edc4842dc807a8bf41475e8afdd6baf721dfa4ae6b5f11cc112a18e7883
+Evidence, readable log and per-startup summary:
+assets/research/g13-uart-entry/uart-enabled-20261101T082700Z/.
+Receive-only capture PID 46710 remains active. No assistant serial bytes,
+bootloader commands or host TV-partition writes were sent. Interactive RX,
+console prompt, Android recovery and firmware restoration remain unverified.
+
+RECOVERY AND ADB ROOT VERIFIED, 2026-11-01T08:58Z
+
+The later Screen UART session reached an interactive MBOOT prompt, and
+mstar_usb exposed working USB Fastboot. Restoring exact stock V013
+init_boot_a at 08:49Z restored Android; the owner confirmed normal TV
+operation. The successful resistor/UART route and stock restoration are
+recorded in AGENTS.md and assets/research/g13-stock-restore-20261101T084914Z/.
+
+At the owner's explicit request to root again, a separate minimal debug
+ramdisk was built from stock init_boot_a. It preserves the original TCL
+init and all stock ramdisk entries; it adds debug properties and the live
+platform policy with an adbd-to-su transition and permissive su domain.
+Only init_boot_a was flashed. After Power from standby, Android completed
+startup and adb root produced uid=0(root), context=u:r:su:s0. The live
+partition SHA256 matches the built candidate. SELinux remains globally
+Enforcing and ADB key authentication remains enabled. This is a working
+ADB-root route, not a successful retry of the old Magisk image.
+
+Current procedure, hashes, validation limits and stock rollback:
+research/G13_ADB_ROOT_NOTES.txt.
+Evidence: assets/research/g13-adb-root-20261101/root-verification.json.

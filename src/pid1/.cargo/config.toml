@@ -1,0 +1,15 @@
+[build]
+target-dir = "../../assets/build/hello-pid1/target"
+
+[target.armv7-unknown-linux-musleabihf]
+linker = "../../tools/pid1/linker-armv7"
+rustflags = ["-C", "target-cpu=cortex-a55"]
+
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"
+
+[env]
+CC_armv7_unknown_linux_musleabihf = { value = "../../tools/toolchain/zcc-armv7-unknown-linux-musleabihf", relative = true }
+AR_armv7_unknown_linux_musleabihf = { value = "../../tools/toolchain/zar", relative = true }
+CC_aarch64_unknown_linux_musl = { value = "../../tools/toolchain/zcc-aarch64-unknown-linux-musl", relative = true }
+AR_aarch64_unknown_linux_musl = { value = "../../tools/toolchain/zar", relative = true }

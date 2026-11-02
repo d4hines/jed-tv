@@ -1,0 +1,11 @@
+[package]
+name = "mp4"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal fragmented-MP4 (DASH) demuxer for YouTube's H.264/AAC streams; no dependencies"
+
+[dependencies]
+
+[[test]]
+name = "fixtures"
+path = "../../test/unit/mp4-fixtures.rs"

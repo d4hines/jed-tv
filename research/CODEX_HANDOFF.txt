@@ -1,0 +1,288 @@
+Codex firmware/QEMU handoff
+HARDWARE-DELTA UPDATE: read research/ISSUE_11_HARDWARE_DELTA.txt and
+research/g06-hardware-contract.json (ten source hashes reverified). Physical
+watchdog servicing and native Ethernet/PTY/upload/child execution are now
+proven; expiration/reset, playback network performance and visible native
+display remain open. QEMU records exact watchdog byte clears via read-only
+QOM counters, with no guessed timeout. New run fidelity.json includes the
+verified hardware contract separately from emulator results. Graphics API
+facts are documented; no successful-display stub or ready-entropy shortcut.
+
+LATEST: exact-kernel QEMU boot is now working. Read research/qemu-g06/README.txt.
+faithful uses the exact dumped kernel SHA256
+01e36bda0554aed46ad3aa1d7fdf688174f46241117f62b4b95f02e25c47c11e.
+The old 6.18 ARM32 media profile is now virt32; fast remains a surrogate.
+Custom model source/build/runner: research/qemu-g06/{g06.c,build.py,run.py}.
+Four Cortex-A55 cores online, threads/timers/fork/wait, and real tvinit
+startup/hold verified. Final ABI evidence: g06-stock-1793505465856833000;
+4-frame decoder/conversion evidence: g06-stock-1793505466082731000 under
+assets/build/qemu-runs. Kernel fault false in both; firmware poweroff is
+still unmodeled. Linux banks exclude reserved ION DRAM at 40400000, but
+that DRAM must remain backed in QEMU (stock ION memset requires it). Run: python3 test/run.py faithful --stock-smoke --no-build
+from agent1. Exact kernel identity strict check now PASSES for faithful.
+Five explicitly disabled initcalls cover absent eMMC, SDIO, external regulator,
+thermal sensor and dynamic IR configuration. Most RIU registers are backing
+cells only; no complete display/audio/packet I/O. Randomness is not ready.
+Issue https://github.com/d4hines/dande-tv/issues/11 tracks remaining gaps.
+Do NOT confuse startup messages with peripheral functionality.
+All work is offline; TV untouched, source changes uncommitted.
+Doom remote audit/fix: research/doom-remote-handoff.txt.
+
+OLDER CHECKPOINT (later notes above supersede kernel/profile statements):
+Checkpoint started 2026-11-01T01:21Z (2026-10-31 Pacific).
+
+Later continuation: read research/playback-bringup-checkpoint.txt for PID-1
+shrinking, ARGB opacity and playback fixes, stricter full-frame comparisons,
+fresh ARM32/ARM64 verification, and the completed local-QEMU multiplayer
+Doom task. Its separate agent1/research/doom-multiplayer-handoff.txt contains
+the final normal-build commands, hashes and gameplay evidence.
+
+STATE AT INITIAL CHECKPOINT (supersedes the transient-state section below;
+the later playback checkpoint above contains newer work): decoder source
+trees have been safely restored by staged regeneration. The shrink agent
+confirmed every generated Rust file matches its tested specialized snapshot
+byte-for-byte; Cargo is safe again. Final generated counts are 288,970 ARM32
+and 290,647 ARM64: 134,944 lines removed in total. No archive overlay was
+used. Its note is written at agent1/research/decoder-shrink-handoff.txt.
+Release builds, full-frame comparisons and format checks passed. The final
+post-regeneration ARM32 Cargo check also passed after retrying with Zig-cache
+access. Both subagents are finished; no work is still running from this team.
+Slides work is complete; agent1/research/slides-image-handoff.txt is written.
+Its ARM32/ARM64 builds and 11 host tests passed; an image slide was visually
+verified in faithful QEMU with the ENOSYS trampoline. Runtime dependency
+growth is zero; production binary growth is +40 bytes ARM32/+320 ARM64.
+
+Read this first
+---------------
+The owner asked for firmware analysis, then realistic QEMU behavior and as
+much preparation as possible for our own builds and eventual Lean port.
+They subsequently requested parallel decoder shrinking and slides images,
+and now want these findings written for another agent.
+
+No TV was contacted or changed in this work. No reboot, flash, unlock,
+setting change, hardware probe, push or commit was performed by this agent.
+Read main/AGENTS.md and RECOVERY_NOTES.txt before any future TV operation.
+This investigation targets ORIGINAL G06/V109, not G13/V013 or V122.
+
+Workspace split is important
+----------------------------
+Device/recovery track: /Users/d4hines/repos/dande-tv/main.
+App/QEMU track: /Users/d4hines/repos/dande-tv/agent1, branch d4hines/agent1,
+HEAD 72b50e2 at this checkpoint. Changes below are UNCOMMITTED.
+agent1/assets is a symlink to main/assets, so generated evidence is shared.
+Main HEAD was 27f2e19 when read; other work may be occurring concurrently.
+Do not merge/reset/clean either tree blindly or remove other agents' edits.
+
+Main discovery: vendor libraries retain DWARF debug information
+--------------------------------------------------------------
+This was found late and is the most promising next research direction.
+The native glibc midaemon and libmi.so retain .debug_info, .debug_str,
+.debug_loc, source filenames/lines and named types. Exact field offsets,
+struct sizes, enum values, function signatures and ioctl parameter types
+can be recovered directly rather than guessed from strings/disassembly.
+
+Artifacts under assets/research/firmware-implications/:
+  libmi.dwarf.txt             Full 27,838,512-byte LLVM DWARF dump.
+  mi-init-layouts.txt         Focused initialization struct/member layouts.
+  midaemon.disassembly.txt    Actual native daemon ARM instructions.
+  mstar_fbdev_mi.ko.disassembly.txt
+  audio.primary.mt5867.so.thumb.txt
+  extracted.json             Hashes of initial extracts.
+  source-verification.json   Fresh backup SHA256SUMS comparisons.
+
+The full native libmi.so used for DWARF is now staged at:
+  assets/build/g06-platform/root/mnt/vendor/tvservice/glibc/libmi.so
+LLVM tool used:
+  /nix/store/8w308r33lb6d0ijmypa802v6dvyswkcj-llvm-21.1.8/bin/llvm-dwarfdump
+Useful bounded command, from agent1:
+  llvm-dwarfdump --name=MI_SYS_InitParams_s --show-children --recurse-depth=1 \
+    assets/build/g06-platform/root/mnt/vendor/tvservice/glibc/libmi.so
+Do not dump function children without a depth limit to the conversation:
+their optimized location/call-site information is very large.
+
+Concrete recovered types in this exact ARM32 glibc library:
+  MI_SYS_InitParams_s: 96 bytes, DIE 0x000a0abe.
+  MI_DEV_SYS_InitParams_s: 392 bytes, DIE 0x000a396d.
+  MI_DISP_InitParams_s: 12 bytes; enum fields at offsets 0,4,8.
+  MI_OSD_InitParams_s: 12 bytes; bWaitSync@0, bAutoFlip@1,
+    eCanvasBufMode@4, u16SupportSurfaceCount@8, bWaitIdle@10.
+  MI_SYS_ModuleInfoParams_s: 8 bytes, DIE 0x000a0a8a;
+    eModuleId@0, bInited@4. This matches the framebuffer readiness query.
+  MI_SYS_Init wrapper has an eIoctl constant -1048045568 = 0xc1881800.
+    Its encoded size is 392, matching the DEVICE struct, not the public
+    96-byte API struct. This is strong ABI evidence, not a tested ioctl.
+  MI_DEV_SYS_Ioctl_e typedef at DIE 0x000a391a points to enumeration
+    0x000a37bd. Follow DW_AT_type references for enum/typedef definitions.
+Do not equate every MI_VIRT/MI_PHY typedef with a native 32-bit pointer;
+follow the debug type graph and preserve actual 64-bit fields/alignment.
+
+NOT DONE: no reusable DWARF-to-ABI extractor, generated Rust layouts, or
+our own MI ioctl initialization implementation was completed before this
+checkpoint. No recovered ioctl has been executed on the TV. The best next
+step is a small machine-readable ABI graph + ARM32 compile-time size/offset
+checks, then tracing only the essential MI init functions and side effects.
+
+Firmware findings that change the platform plan
+-----------------------------------------------
+1. Exact mstar_fb_open calls mstar_FB_GetMiDaemonInitStatus at 0xb38 and
+   returns -EINVAL at 0xb88 if not ready. The helper uses MI_SYS_GetAttr
+   attribute 5 and a returned status byte. Merely loading modules is not
+   sufficient; a ready flag must not be fabricated as a substitute for init.
+2. Framebuffer probe reads /vendor/tvconfig/config/sys.ini and OSD INIs.
+   OsdDefine.ini configures FBDEV0 at 1280x720, layer 1, format enum 8,
+   FB_IOMMU=1 and FB_DFB_RESERVED=1. Actual RGB bitfields/page count remain
+   unmeasured; enum 8 has not yet been mapped to a format definition.
+3. sys.ini selects /tclconfig/hardware/param/soc/
+   Customer_185_32TCON_B07-1_TL1P2.ini. Board-specific configuration matters.
+4. mik_init.ini disables automatic DISP/OSD/AUDIO/AOUT/PCM initialization.
+   Follow the native daemon's actual initialization order/arguments instead
+   of assuming insmod completes panel/speaker setup.
+5. The normal Android audio HAL PCM path calls MI_PCM_Open/Write and
+   MI_AOUT_ConnectInput. It also has a separate tinyalsa mmap path. Direct
+   pcmC0D0p speaker operation is not established. Android primary output
+   policy is S16_LE stereo 48000 Hz; this is not an ALSA capability probe.
+6. Native glibc libmi/libmi_server/libapiVDEC exist alongside Android's
+   bionic libmi3/libOMX. They are useful native hardware-decode leads, but
+   ABI recovery and buffer ownership remain work. Do not dlopen bionic
+   libraries into the current static musl application.
+7. .modinfo depends strings contain old utpa2k-system/avdec/frontend names.
+   The shipped/live module is utpa2k. Actual imported/exported symbol
+   resolution succeeds in the selected 13-module load order. Filenames or
+   modinfo strings alone give a misleading dependency picture.
+8. Earlier device-track work already supersedes agent1's fastboot boot
+   instructions: no temporary boot handler was found in the inspected G06
+   table; kexec load/unload worked but two actual handoffs failed. Read
+   main/research/g06-ram-boot-status.md. Boot transport remains a hardware
+   gate, separate from app/QEMU correctness.
+
+Audited platform kit and boot packaging
+--------------------------------------
+New agent1/tools/g06_firmware.py builds an OFFLINE analysis kit at
+assets/build/g06-platform/{root,manifest.json}.
+It verifies five source backups against SHA256SUMS, pins the derived vendor
+image hash, parses ARM32 ELF metadata, follows native DT_NEEDED/interpreter
+dependencies (including the stock /lib -> tvservice/glibc alias), resolves
+module imports against module exports and recorded kernel exports, and
+follows literal configuration references while skipping commented examples.
+It never runs vendor code or contacts the TV.
+
+Latest kit: 141 staged files, 93,772,303 bytes. Native ELF closure has 68
+logical file paths and no unresolved DT_NEEDED dependencies. This proves
+file availability only: dlopen, runtime config/firmware, shared memory,
+Android services, device ioctls and initialization behavior remain unproven.
+There are 15 unresolved literal configuration references, including
+directories, optional alternatives and possibly absent files. They are
+listed honestly in the manifest, not all presumed mandatory or harmless.
+
+agent1/tools/make_tv_boot.py now uses this audited kit for m1b/m1c and
+packages exact referenced tvconfig/tclconfig files at their original paths.
+Vendor daemon/libraries remain out of the minimal image. Manifest records
+hardware_ready:false and unresolved initialization/routing/boot gates.
+
+m1b was rebuilt and verified; 60 exact configuration files, 1,226,566 bytes
+uncompressed, are present. The boot image is 29,605,888 bytes; compressed
+ramdisk 9,715,941 bytes. Boot SHA256:
+52366e50dfd36dd8d38ec6441cbb9a185835ccc63bf13460b3746384299a7ea7
+Kernel and DTB retain stock bytes; the stock payload repack self-check
+matched its first 20,621,312 bytes. This is offline packaging evidence.
+m1a/m1c were NOT rebuilt after these packaging changes; do not reuse their
+old historical hashes as new build identities.
+
+New agent1/tools/check_tv_boot.py verifies boot/init hashes, exact packed
+configuration/module hashes and load order, config values, and absence of
+both native vendor daemon and QEMU-only bootstrap. m1b passed. This does
+not prove the module CRC ABI, actual load, cold initialization or recovery.
+
+Commands from agent1:
+  python3 tools/g06_firmware.py
+  nix shell nixpkgs#android-tools -c python3 tools/make_tv_boot.py m1b
+  python3 tools/check_tv_boot.py m1b
+  PYTHONDONTWRITEBYTECODE=1 python3 test/test_g06_firmware.py
+Seven failure-oriented host tests passed (ELF/path/archive rejection and
+actual missing/misordered module symbols, including stale-name handling).
+debugfs uses no -w. Original backup images remain untouched.
+
+QEMU changes and validation
+---------------------------
+All below live UNCOMMITTED in agent1:
+  test/tv.sh defaults to faithful ARM32; explicit fast retains ARM64/HVF.
+  Faithful guest .2/host .1 on 192.168.77.0/24.
+  For tvinit, ip=off forces existing userspace static IPv4 setup.
+  Standalone ytplay still uses QEMU kernel static-IP setup; recorded gap.
+  Faithful RTC starts at observed incorrect 2025-01-17 date.
+  test/g06-firmware.json records evidence hashes/constraints/gaps.
+  test/run.py writes fidelity.json with app/kernel hashes per run.
+  Run directory names now have nanosecond suffixes to prevent collisions.
+
+New test/g06-init.rs is a TEST-ONLY ARM32 PID-1 trampoline. It installs an
+inherited seccomp absence filter returning ENOSYS for syscall numbers
+403..0xeffff, while preserving ARM-private 0xf0000+ calls, then execs the
+real payload as PID 1. This exercises legacy musl time/thread fallbacks on
+the newer QEMU kernel. It self-checks representative blocked calls plus a
+legacy clock/thread/sleep path. no_new_privs is inherited. It is not a
+security boundary or full Linux 4.19 emulation, and stays out of TV images.
+
+Verified with the trampoline: ARM32 platform self-test; PID1 static-IP/stale
+clock boot; home -> local replay Coffee Run -> Home. Earlier both ARM64 and
+ARM32 platform tests passed before the trampoline as well. Tests used local
+replay; no live YouTube contact. New gates run with:
+  python3 test/check.py -k 'G06:'
+  python3 test/check.py -k 'faithful: platform self-test'
+QMP sockets and replay listening require execution outside the sandbox's
+local-socket restriction. Initial sandbox failures were environmental;
+tests passed with the granted execution permission.
+
+Still not modeled: MediaTek board/MMIO, MI driver behavior/IOMMU/panel/audio
+routing, reserved-memory layout, cycle timing, exact 4.19 behavior and remote
+device topology. QEMU runs Linux 6.18.57 and virtio devices, not the stock
+kernel/modules. Do not count a QEMU pass as hardware bring-up success.
+
+Parallel agents and transient state at 01:21Z
+--------------------------------------------
+Decoder shrinking agent: task /root/shrink. It specialized the decoder to
+8-bit 4:2:0, reports bit-exact checks passed for all 4431 frames on BOTH
+ARM32 and ARM64 (ARM32 with the new syscall trampoline), and rejection of
+10-bit and 4:4:4 inputs. Reported metrics before final regeneration:
+  ARM32 generated lines 356,407 -> 288,980; ytplay 3,574,884 -> 3,150,508 B.
+  ARM64 generated lines 358,154 -> 290,653; ytplay 3,677,792 -> 3,166,552 B.
+NEON assembly unchanged. Important transient issue: regeneration exposed
+stale pre-migration cache paths and cleared the generated decoder trees.
+The agent is repairing staged regeneration and restoring a buildable tree.
+DO NOT RUN CARGO until it confirms restoration. At this instant git status
+shows six generated decoder tracked files deleted; this is not a finished
+state. Archive overlay restoration was rejected by automatic review because
+it could overwrite uncommitted changes; the agent is using safe staged
+regeneration instead. Preserve source backups and do not bypass that denial.
+Expected final note: agent1/research/decoder-shrink-handoff.txt.
+
+It also found a pre-existing tiny-fixture benchmark bug in player.rs around
+line 718: the conversion-only path does not flush final decoder frames and
+can index an empty frames vector. Not fixed in this work. Use a sufficiently
+long fixture for now; fix and test before relying on very short benchmarks.
+
+Slides agent: task /root/slide_images. Existing Markdown ![caption](path)
+already had build-time ffmpeg conversion into embedded RGBA, with no runtime
+decoder. Agent reports fixing transparent-edge bilinear blending and adding
+real conversion/render validation plus malformed/oversized PAM tests.
+Host slides tests 11/11 passed; release builds/visual verification and final
+metrics were still in progress. It owns src/slides only.
+Expected final note: agent1/research/slides-image-handoff.txt.
+
+I requested both agents finish their current verification and write state,
+with no new scope or commits. Read their final notes for authoritative final
+source-tree state; the transient status above must not be treated as final.
+
+Suggested next owner of the firmware track
+-----------------------------------------
+1. Confirm decoder regeneration is restored; read both subagent notes.
+2. Exploit DWARF: extract only required MI public/device structs, enum/ioctl
+   constants and ARM32 size/offset assertions. Keep generated data in assets.
+3. Trace native MI_SYS_Init -> MI_DISP_Init -> MI_OSD_Init and readiness
+   setting, including config/allocations/threads and failure cleanup. The
+   public wrapper and kernel device ABI are different; do not conflate them.
+4. Decide how much of this initialization to own directly versus retain as
+   a temporary vendor baseline. Native daemon closure is not minimal/ours.
+5. Continue offline negative cases and manifest verification; only then plan
+   a separately authorized hardware diagnostic with reachable logs and the
+   existing recovery path. There is no promise that everything will snap
+   into place until actual panel/speaker/boot tests pass.

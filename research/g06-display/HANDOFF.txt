@@ -1,0 +1,38 @@
+G06/V109 OFFLINE DISPLAY HANDOFF
+Worktree: /private/tmp/g06-display-offline; branch codex/g06-display-offline
+No TV connection or boot changes made by this investigation.
+
+Subsequent hardware-worker correction: direct ioctl syscalls require the
+additional size/reserved/u64-pointer envelope built by libmi3 ioctl_wrapper
+at 0x5090c. See the correction at the top of FINDINGS.txt and the updated
+mi-display-abi.h. Native devtmpfs uses /dev/mik/sys, unlike Android's
+/dev/mik!sys. The earlier two-level syscall interpretation was incomplete.
+
+Immediate finding from exact V109 code:
+1. Provide /vendor/tvconfig/config/mik_init.ini and sys.ini BEFORE insmod mik.
+2. Also provide board.ini, MMAP_MI.h, OSD/OsdConfig.ini, OSD/OsdDefine.ini.
+   Exact source copies: assets/research/g06-display-offline/tvconfig-config/config/.
+3. sys.ini -> /tclconfig/hardware/param/soc/Customer_185_32TCON_B07-1_TL1P2.ini
+   -> /tclconfig/hardware/param/panel/PanelPara/CSOT32_ST3151B07-1.ini,
+   TCON binaries, PQ directory. Extracts: assets/research/g06-display-offline/
+   tclconfig-hardware/hardware/. Do not substitute a different model's timings.
+4. board.ini selects onebin maps from MODEL_ID flash environment. Keep both
+   config/onebin/model_0/ and model_1/; don't infer active MODEL_ID from RAM size.
+5. mik's built-in MI_DEV_SYS_ModuleInit can perform real display/OSD init:
+   MI_DISP_INIT=1 and MI_OSD_INIT=1 in a COPIED mik_init.ini. Stock sets both 0.
+   MI_DISP_Init call .text+0x34674; MI_OSD_Init .text+0x34a80.
+   Success records MI_SYS_SetAttr(5,{selector=6 or 9,ready=1}).
+6. fb open gate is MI_SYS_GetAttr(5,{selector=1,ready byte at +4}), NOT selector
+   40 (mik loaded). Stock midaemon publishes selector 1 at 0x30e0 after init.
+   A replacement must complete real init before publishing readiness.
+7. ELF module closure (each basename under /vendor/lib/modules):
+   iniparser, kdrv_xc, utpa2k, hdcp1x, hdcp2x, xcker, mwgifker, misck, mik,
+   mstar_fbdev_mi. Symbol edges are in module-dependencies.json under assets.
+   Retain stock kdrv_platform/kdrv_alg/libdmdbraslia for initial validation;
+   they are not in the link closure, but runtime registration may matter.
+
+This establishes a smaller candidate path, NOT hardware-proven sufficiency.
+Full report is in FINDINGS.txt. Candidate config pack: assets/research/
+g06-display-offline/candidate-root/ (331 files, 5,786,955 source bytes).
+Reconstructed direct ioctl layouts: mi-display-abi.h.
+Verification: module provider CRCs and pack hashes checked offline.

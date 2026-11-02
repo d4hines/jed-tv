@@ -1,0 +1,50 @@
+Historical Rust/Bionic build investigation
+=========================================
+The runtime now uses static ARM Rust direct MI drivers. The superseded AAudio
+bridge, native SurfaceFlinger wrapper, and their unused Rust/Bionic builders
+were removed after direct Doom and local video/audio passed on hardware.
+Use tools/toolchain/build-static-rust.sh for current standalone Rust helpers.
+The C/Bionic middleware bootstrap still has its separate build-native.sh.
+
+Historical evidence follows; named retired sources are no longer build targets.
+
+Rust/Bionic audio build, 2026-11-01
+=================================
+Offline build proof only. This agent did not access or run programs on the TV.
+
+Build:
+  rustup target add armv7-linux-androideabi --toolchain 1.92.0
+  ./tools/audio/rust-build.sh
+  ./tools/audio/rust-build.sh src/audio/bridge.rs assets/build/rust-audio-bridge
+
+The second form accepts arbitrary std Rust source and output paths; it does not
+require Cargo or an NDK. Host tools: pinned rustc/rust-lld, LLVM clang for the
+small startup assembly, llvm-readelf for metadata. TV_ANDROID_CLANG overrides
+the default Homebrew clang path. Source and output paths are resolved relative
+to the repository root.
+
+The Rust target is Android ARM EABI, not hard-float ARM Linux. Rust std is linked
+statically while libc/libdl/libm/liblog come from the exact stock Bionic copies
+in assets/research/native-vendor-stack/bionic. Linker --as-needed drops unused
+DSOs. Bionic API30 exports the ARM unwind functions; the linker wrapper omits
+Rust's redundant -lunwind library request. No undefined-symbol suppression is
+used. The normal Rust main/standard-library initialization is preserved.
+
+src/audio/bionic-start.S supplies the proven __libc_init startup used by the
+existing C probes. It is currently a copy of audio/bionic-start.S; the older
+file was retained so audio/build-native.sh remains unaffected. The new build
+uses only the src/audio copy.
+
+Output: assets/build/rust-audio-toolchain/toolchain-probe
+Size: 240456 bytes at the initial build (check actual current file).
+Initial SHA256: 8b42dd58a45154e34f26ecb26696f127ff02573bae80b240707174e031ea13ec
+ELF32 ARM, EABI flags 0x5000200 (soft-float), ET_DYN executable, interpreter
+/system/bin/linker. Initial DT_NEEDED: libdl.so and libc.so only.
+Metadata: same output filename plus .elf.txt.
+
+The probe prints arguments/pid, dlopens libaaudio.so, resolves create builder,
+open stream, write, frames written and frames read, then tests a Rust thread,
+/proc file reading and UnixStream pair. It does not create/start an audio stream
+or write samples. Successful compilation/linking does not prove live loading.
+Use existing Android environment/LD_LIBRARY_PATH from the proven service
+startup when the hardware coordinator runs it. No ART or app_process is used.

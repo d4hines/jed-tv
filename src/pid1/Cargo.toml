@@ -1,0 +1,29 @@
+[package]
+build = "../../tools/pid1/build.rs"
+name = "hello-pid1"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+diagnostics-only = []
+mi-display = []
+repl = []
+
+[dependencies]
+libc = "0.2"
+platform = { path = "../platform" }
+font8x8 = { version = "0.3", default-features = false }
+g06-audio = { path = "audio" }
+g06-display = { path = "display" }
+tvinit = { path = "tvinit" }
+mi-bootstrap = { path = "mi-bootstrap" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[workspace]
+exclude = ["audio", "display", "tvinit", "mi-bootstrap"]

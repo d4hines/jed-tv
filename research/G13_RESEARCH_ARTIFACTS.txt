@@ -1,0 +1,205 @@
+G13 research handoff: tools and evidence index
+2026-11-01
+
+Scope and storage
+-----------------
+Companion to G13_RESEARCH_HANDOFF.txt, describing the checkpoint through
+c60b635, rebased onto main revision 76c5a57. Paths below are repository-relative
+unless absolute. This is an index of available material, not a work queue.
+
+Authored scripts and notes are tracked in Git. Firmware, captured device
+inputs, extracted trees, builds and result JSON/logs are under ignored
+assets/. A Git checkout alone therefore does not contain the tested images
+or all reproduction inputs. Several retained private inputs resolve to
+/home/eduardo/tv_hack/assets/ through local symlinks.
+
+The documented build host is ARM64 NixOS. Each experiment has an existing
+Nix environment/reproduction guide. The larger new preparation scripts
+check working headroom above the owner's 15 GiB free-space reserve; this
+is a preflight check, not a filesystem quota. No large build or extraction
+was performed while writing the original handoff. The subsequent 5.15.224
+build used the owner's x86_64 NixOS VM, as documented below.
+
+VM-built Linux 5.15.224
+----------------------
+research/G13_KERNEL_HANDOFF.txt records the build VM connection, source
+snapshot status, archive checksums, ARM64 assessment and TV-trial limits.
+research/g13-kernel-vm/README.txt documents source pins, VM preparation,
+the 43 conflict resolutions and two prerequisite files, build commands,
+and the additional source/QEMU/module checks. Evidence is under
+assets/build/g13-kernel-vm/:
+  kernel-build.json              Source tree, toolchain, config and artifact hashes.
+  source-check.json              Six additional compile targets pass.
+  replay-verification.json       79,496 source entries match a fresh replay.
+  qemu-20261101T223607/           Original Android 16 native test, 12/12 pass.
+  kernel-test/qemu-20261101T223631/  Extended kernel test, 18/18 pass.
+  v013-module-audit.json         All 33 ARM32 modules have CRC mismatches.
+  v033-module-audit.json         All 33 ARM32 modules have CRC mismatches.
+The extended test confirms stock devnode rejection and exercises rebuilt
+module loading, timer shutdown, and eight VMA-remapping cases. No TV access.
+After integration with main 772abef, the same kernel passed again in
+qemu-20261101T230345/ (12/12) and kernel-test/qemu-20261101T230407/ (18/18).
+The research source recipes are unchanged; no TV access or kernel rebuild.
+
+Stock-driver ABI reference
+--------------------------
+research/g13-module-compat/README.txt describes the extracted stock headers,
+reproduction commands, type differences and display/audio dependency graph.
+Its tools recover kheaders, compare DWARF, reproduce real symbol CRCs and
+verify a stock Mali task-reference access through disassembly. The small
+layout-probe.c is compiled only; it never runs or loads as a module.
+
+Evidence under assets/research/g13-module-compat/:
+  v013-kheaders/, v033-kheaders/  Exact embedded headers and file manifests.
+  v013-symbols/, v033-symbols/    Both reproduce module_layout=a03a05bf.
+  v013-vs-candidate.json         Kernel/module.o DWARF comparison.
+  wifi-vs-candidate.json         Broader Wi-Fi/cfg80211 DWARF comparison.
+  v033-vs-v013.json              All 438 observed Bluetooth layouts match.
+  wifi-v033-vs-v013.json         All 1,294 observed Wi-Fi layouts match.
+  v013-driver-stack.json         Dependency closure and Mali code evidence.
+  v033-driver-stack.json         Same analysis for V033.
+  verification.json             36 passing artifact/layout/CRC checks.
+The headers are not a complete source tree or a repaired kernel. No TV
+connection, flash, forced module loading or additional QEMU run occurred.
+
+Baseline source kernel: Linux 5.15.148
+------------------------------------
+Tracked entry points:
+  research/g13-kernel/prepare.py       Pinned source acquisition/normalization.
+  research/g13-kernel/build.py         Image, modules and device-tree build.
+  research/g13-kernel/run.py           Partial-machine QEMU smoke harness.
+  research/g13-kernel/check-fixdep.py  Regression check for the build repair.
+  research/g13-kernel/shell.nix        Research build environment.
+Detailed build commands and patch rationale: research/g13-kernel/README.txt.
+
+Captured inputs shared by the source-kernel experiments:
+  assets/research/g13-kernel-source-20261101/live.config
+  assets/research/g13-leanboot-os/live.dtb
+Their expected SHA256 hashes are in the reproduction guides and scripts.
+
+Saved successful run:
+  assets/build/g13-kernel/qemu-20261101T213241/result.json
+  assets/build/g13-kernel/qemu-20261101T213241/serial.log
+  Result: pass=true; four CPUs; no TV access.
+  Kernel SHA256:
+    c4a92f08f81dca71497835dd6e43bd81e58e0eb94f5fc645761a2f39af8ab554
+
+Updated source kernel and Android 16 native core
+------------------------------------------------
+Tracked entry points in research/g13-android16/:
+  prepare.py                      Pinned donor/common-source preparation.
+  merge-kernel.py                  Checked common/vendor source integration.
+  resolve-kernel.py                Recorded resolution of 25 conflicts.
+  build-kernel.py                  Updated kernel build and artifact manifest.
+  minimal.py                      Small native test filesystem/initramfs.
+  native-probe.c                   Source of the Bionic/Binder test.
+  run.py                          QEMU test and result capture.
+  inventory.py                    Static native-service dependency survey.
+  shell.nix                       Research build environment.
+Detailed commands and test assumptions: research/g13-android16/README.txt.
+
+The merge tool records the expected conflicts and exits nonzero before the
+separate resolution step. That is part of its documented protocol, not an
+unrecorded build failure. Source pins are:
+  Vendor 5.15.148: 3543dbbd43a7e69112b1169b34171d7bd745cdee
+  Common base:    34148b6a5103338e78d6b545099d5200b75c7e58
+  Common update:  6ce868e42ba10faa46e2e9f1faf94af0264eaf35
+These are the experiment's pins, not a claim about current upstream heads.
+
+Saved successful run:
+  assets/build/g13-android16/qemu-20261101T215916/result.json
+  assets/build/g13-android16/qemu-20261101T215916/serial.log
+  Result: pass=true; all 12 required markers; no TV access.
+  Release: 5.15.220-mt5867-ack6ce868e42ba1
+  Kernel SHA256:
+    74aba6d8c709df822f71209f2991616c22a583da2235d11c6ecf939a8b7289a2
+  Test ramdisk SHA256:
+    e84b6a12448f9fc88eac50d050fe81c5fd22039028dd828f3e44ebe1a0d0f6f5
+
+Related saved evidence:
+  assets/build/g13-android16/kernel-build.json
+  assets/build/g13-android16/kernel-final.log
+  assets/build/g13-android16/reproduce/verification.json
+The independent source replay compared 79,492 files, including modes and
+symlink contents, with no differences. The kernel's build timestamp is not
+normalized, so that source result does not promise identical future binaries.
+
+The post-rebase run against locally fetched main revision a665671 is saved at:
+  assets/build/g13-android16/qemu-20261101T221048/result.json
+  assets/build/g13-android16/qemu-20261101T221048/serial.log
+All 12 required markers passed again with the same kernel and ramdisk hashes.
+The rebase replayed the three research commits without conflicts; handoff
+commit references were then updated. The src/, demo/, tools/, test/ and root
+flake files match the main base, and no TV or VM access occurred in this check.
+The later rebase onto 76c5a57 also completed without conflicts. Its upstream
+changes concern the City flight app; the research runtime and harness sources
+are unchanged. The QEMU run above was not repeated for this later rebase.
+
+Shared emulator and separate loader tests
+----------------------------------------
+research/qemu-g06/{g06.c,build.py,run.py} contains the partial MT5867 model.
+Its build is under assets/build/qemu-g06/. The source-kernel runners supply
+G13 inputs; the older G06 stock-kernel profile is a separate experiment.
+
+tools/bootloader/qemu.py is the generic Lean-loader -> Linux -> BusyBox test.
+tools/bootloader/README.txt documents it. Its QEMU virt machine and supplied
+Debian kernel are distinct from the partial-machine source-kernel tests.
+research/g13-v033/check-loader.py emulates image preparation under Unicorn;
+it records kernel_executed=false. These are three different test boundaries.
+
+V033 package and offline tests
+-----------------------------
+Detailed provenance and results: research/G13_V033_OFFLINE.txt.
+Tracked tools:
+  research/g13-v033/erofs-legacy.nix    Pinned erofs-utils 1.8.10 reader.
+  research/g13-v033/check-loader.py    ARM image-preparation checks.
+  research/g13-v033/check-postinstall.py  ARM helper logic with mocks.
+
+Evidence root: assets/research/g13-v033-offline-20261101/
+  signature-verification.json       Whole-file signature and ZIP CRCs.
+  payload-audit.json                Nineteen payload partition checks.
+  filesystem-extraction.json        Eight EROFS filesystem extractions.
+  extracted/                       Files for offline inspection.
+  loader/loader-check.json          Unchanged image bytes; intercepted handoff.
+  loaded-module-coverage.json       Counterparts for 27 captured loaded modules.
+  policy-compile.json               Matching-policy compilation results.
+  postinstall-emulation.json        Slot-dependent helper behavior with mocks.
+
+Package SHA256:
+  e3e51c77cbd1b55ce28c5190e19640d15ba8ba31d424f376b98515e6cd431fb9
+The package is a signed A/B OTA, not a demonstrated standalone service image.
+Module-name coverage does not establish symbol CRC or hardware compatibility.
+
+Firmware inventories and APEX dependencies
+------------------------------------------
+Tracked tools in research/g13-firmware-trim/:
+  extract-v013.py   SHA-checked stock extraction, including super metadata.
+  inventory.py      Per-file, partition, category and app-directory sizes.
+  apex-audit.py     APEX manifest exports and outside-APEX ARM32 ELF imports.
+Methodology and exact reproduction commands: the README.txt in that directory.
+
+Evidence root: assets/research/g13-firmware-trim-20261101/
+  v013-extraction.json, v013-extracted/
+  v013-inventory.json, v033-inventory.json
+  v013-apex-audit.json, v033-apex-audit.json
+  native-elf-references.json, saved-native-processes.json
+Both inventories cover eight filesystems. Both APEX audits cover 32 containers
+with no ELF parse failures. The import audit is static and excludes runtime
+dlopen, full APEX-internal closure and linker-namespace validation.
+
+Physical-TV context
+-------------------
+research/G13_NATIVE_BOOT_NOTES.txt and research/G13_DEVELOPMENT.txt describe
+the earlier V013 installation and name its captures. The exact startup-result
+record inspected for this research is:
+  /home/eduardo/tv_hack/assets/research/g13-native-pid1-20261101/flash-test/native-attempt-3-result.json
+Historical process and Ethernet captures are under the same absolute root in
+g13-startup-parallel-20261101/ and g13-ethernet-20261101/.
+These records concern the installed Android 14 native stack, not Android 16.
+
+Commit map
+----------
+52b66b1  Source-kernel build repairs, baseline QEMU reproduction and notes.
+f770968  Kernel-source search and V033 offline research.
+00aa9c2  Updated Linux 5.15.220 and Android 16 native QEMU experiment.
+c60b635  Firmware reduction inventory, APEX audit and findings.

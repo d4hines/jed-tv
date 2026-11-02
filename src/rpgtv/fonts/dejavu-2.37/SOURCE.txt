@@ -1,0 +1,24 @@
+DejaVu fonts 2.37, embedded by src/slides (include_bytes via build.rs).
+
+Source: nixpkgs#dejavu_fonts (pname dejavu-fonts, version 2.37), copied
+2026-10-31 from
+  /nix/store/a9njndcvzh44rfjd8wxah1w8ziy9zffz-dejavu-fonts-2.37/share/fonts/truetype/
+(DejaVuSans.ttf there is a symlink into
+  /nix/store/1d3pyxyrjb7qfijld88yf9yiwajp5ymv-dejavu-fonts-minimal-2.37).
+nixpkgs builds them from github.com/dejavu-fonts/dejavu-fonts tag version_2_37
+(source tree /nix/store/v7wik3xar8rkap69d5smm047rfcigq4p-source); LICENSE is
+that tree's LICENSE file.
+
+Reproduce:
+  nix build nixpkgs#dejavu_fonts --print-out-paths --no-link
+  cp -L <out>/share/fonts/truetype/{DejaVuSans,DejaVuSans-Bold,DejaVuSansMono}.ttf .
+
+Licence: DejaVu Fonts License (Bitstream Vera Fonts licence for the Vera
+glyphs, Arev fonts licence for glyphs from Arev; DejaVu changes are public
+domain). Free to use, embed and redistribute; see LICENSE. SPDX: Bitstream-Vera.
+
+sha256 (bytes):
+8bd787bf3048548345b304d61421c6c0de92b0f0108906845b0ac3f7ba6a3bf3  DejaVuSans.ttf (759676)
+d10a0a1e76b844d488a50a4838a150413087f2dcf97309514e22774da6a13721  DejaVuSans-Bold.ttf (708876)
+9d9bfebceb1c3f6f4ad383ded568a6926086208f43f7f92f92f7e93a1383fa38  DejaVuSansMono.ttf (343096)
+7a083b136e64d064794c3419751e5c7dd10d2f64c108fe5ba161eae5e5958a93  LICENSE (8816)

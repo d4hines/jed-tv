@@ -1,0 +1,169 @@
+G13 / T221T10 V013: standby-to-USB recovery path
+2026-11-01 UTC, offline investigation
+
+Scope
+
+The owner's controlled observation is that Power from standby gives the
+orange unlock warning without the prepared USB stick, and backlight without
+the warning with it. The V033 trial also produced automatic restarts.
+This investigation accepts standby/USB entry as the useful direction. It
+does not require UART input, modify the stick, or access TV partitions.
+
+All exact binary conclusions below concern the saved V013 firmware. Current
+installed contents are unreadable; the V033 trial might have changed them.
+
+1. MBOOT selects USB upgrade mode
+
+bootcheck's mode-4 branch first runs custar (0x2742bb58). That is the
+bootloader service-package route. If custar returns -1, it runs
+ota_zip_check (0x2742bb90). Successful OTA discovery then calls
+boot_mode_recovery at 0x27428220, without needing an interactive prompt.
+
+custar and OTA discovery are different routes. The former requires an
+authenticated service package; the latter uses installed Android recovery.
+Renaming an OTA or a raw backup does not make a service package.
+
+2. OTA discovery writes a request, not the update
+
+ota_zip_check_usb (0x274a1634) initializes USB and looks for
+/update_signed.zip. It obtains the FAT label and UUID and constructs the
+2048-byte bootloader message in misc:
+
+  command: boot-recovery
+  recovery:
+    recovery
+    --update_package=/mnt/usb/sda1/update_signed.zip
+    --label=<first eight label bytes>
+    --uuid=<FAT UUID>
+
+Its 'OTA upgrade OK!~' log follows writing that request. It does not mean
+that recovery has started, authenticated the ZIP, or installed anything.
+The label affects recovery arguments; it does not replace BCB.command or
+specify a kernel/ramdisk to load directly from USB.
+
+3. MBOOT starts internal recovery
+
+boot_mode_recovery sets its recovery state, calls panel_pre_init, and uses
+the command 'readKL recovery; bootKL' (0x2742845c). The existing orange-logo
+routine skips the unlock warning when isBootToRecovery is true. Therefore
+the owner's screen difference is consistent with this branch, but it is
+not a capture of BCB contents or proof Linux ran.
+
+The command emulator returns from bootKL and records two command calls.
+A successful real kernel handoff normally would not return. Do not read
+that synthetic trace as evidence of two physical boots.
+
+4. readKL changes the boot flags and loads the active slot
+
+Exact do_ReadKL starts at 0x27456ab4. It stops USB ports 0, 1 and 2, then
+recognizes the 'recovery' argument. At 0x27456c84..0x27456c98 it replaces
+androidboot.force_normal_boot with 0 and changes the requested partition
+name to 'boot'. Normal readKL instead installs force_normal_boot=1.
+
+The actual bootarg replacement helper, 0x274bcd7c, was executed offline
+against the saved MPOOL environment, which initially contains '=1'. The
+result contains exactly one '=0'. The exact v4 bootconfig converter at
+0x274afc24 then moves the androidboot fields from the command line into
+bootconfig, including that '=0'. Both normal and recovery controls passed.
+
+Thus the saved normal-boot flag does not stick through this recovery path.
+USB detection also occurs before USB is stopped for kernel handoff. Linux
+must initialize its own USB drivers and rediscover the stick afterward.
+
+The saved layout has no dedicated recovery partition. The v4 loader uses
+boot_<slot> for the kernel, vendor_boot_<slot> for the vendor ramdisk/DTB,
+and init_boot_<slot> for the appended generic ramdisk. The sole saved vendor
+fragment is type 1 (platform) and contains recovery. readKL_dtb's generic
+append at 0x27452570..0x2745267c is shared with recovery.
+
+5. Magisk has a route back to the stock init
+
+Official Magisk v31.1 native/src/init/getinfo.cpp reads /proc/cmdline and
+then /proc/bootconfig. A value of 0 makes force_normal_boot false.
+RECOVERYMODE=false in .backup/.magisk does not force normal boot.
+
+In native/src/init/init.rs, with no skip_initramfs and force_normal_boot
+false, the existence of /system/bin/recovery selects recovery_or_charger.
+That function restores the original /init, removes /.backup and eventually
+executes /init. The vendor ramdisk contains /system/bin/recovery.
+
+Fresh decompression of .backup/init.xz from the actual patched CPIO gives
+the exact stock generic /init, SHA256:
+18b79298c5d1868d7b5b3bf77f69b664dc824b0120e47b0d663616d3febce75a
+
+This is an intended recovery path through Magisk, not proof that this TV
+executes it successfully. The early kernel/ramdisk/Magisk steps still have
+to work. A shared patched init alone is insufficient to diagnose why both
+normal boot and recovery fail. Kernel CONFIG_RD_XZ being unset does not
+prevent this restoration: Magisk decompresses the backup in userspace.
+
+Sources pinned to the version used for the patch:
+https://github.com/topjohnwu/Magisk/blob/v31.1/native/src/init/init.rs
+https://github.com/topjohnwu/Magisk/blob/v31.1/native/src/init/getinfo.cpp
+https://github.com/topjohnwu/Magisk/blob/v31.1/native/src/init/rootdir.cpp
+Downloaded source URL and SHA256 are in source-provenance.json.
+
+6. Stock recovery userspace still has substantial startup work
+
+The saved vendor ramdisk has /init -> /system/bin/init and includes the
+recovery init configuration, recovery executable and supporting libraries.
+Its init.recovery.mt5867.rc loads the EHCI, USB device and PHY modules,
+creates /mnt/usb/sda1, and mounts cusdata, project_id, tvservice_<slot> and
+tvconfig. These actions precede the boot event that starts recovery.
+
+system/etc/init/hw/init.rc starts 'service recovery /system/bin/recovery'
+in the default class. adbd and fastbootd are disabled services activated
+by later USB property changes. Their absence on the host is not by itself
+proof the kernel or init never started.
+
+Exact recovery main parses options at 0xb6af8, loads librecovery_ui_ext.so
+and resolves make_device at 0xb6e00..0xb6e50, then calls the UI initializer
+at 0xb6e96..0xb6ea4. A returned UI failure falls back to a stub UI. This
+common startup precedes its later recovery/Fastboot mode loop and USB
+configuration work (0xb70b2 onward). --fast does not bypass this startup.
+
+This adds a specific later failure candidate: an early mount or a hung/
+crashing UI initializer could affect both stock recovery and --fast. A
+simple returned graphics error should fall back to the stub, so 'no image'
+alone is not enough to diagnose that candidate either.
+
+7. Only then can recovery process the USB update
+
+Recovery must read the BCB arguments, bring up its services/USB, locate and
+open the ZIP, authenticate it and run the OTA installation. An empty ZIP,
+--show, --fast and the real V033 package all depend on the earlier shared
+stages. They are not four independent ways around a broken early boot.
+
+What is established / still missing
+
+Established offline: USB request format; the internal recovery command;
+normal-to-recovery flag replacement and bootconfig transfer; shared image
+selection; intact stock init inside the patch; common recovery UI startup.
+
+Not established live: which of those stages runs after the last UART log,
+whether image verification/loading finishes, whether Linux unpacks the
+combined ramdisk, whether Magisk restores init, or whether recovery mounts/
+UI initialization complete. No captured error selects among these causes.
+The observed automatic resets also do not identify watchdog versus panic
+versus an explicit reboot. The saved kernel has CONFIG_PSTORE disabled.
+
+A USB-only path independent of installed recovery is still the signed
+bootloader service-package branch at step 1. No verified exact compatible
+package or automatic unsigned script entry has been established. This
+analysis does not justify repeating the same label/ZIP trial as a remedy.
+
+Reproduction and artifacts
+
+  research/recovery-probe/audit-g13-recovery-handoff.py OUTPUT.json
+  Requires Python with Unicorn. All storage/environment fixtures are RAM.
+  Real MBOOT string/formatting/replacement instructions execute; hardware,
+  malloc/free, command execution and environment storage are stubbed.
+  Stops before AVB and partition loading, and after bootconfig emission.
+  It neither verifies AVB nor emulates Linux/Magisk/recovery execution.
+
+  assets/research/g13-recovery-path-20261101/handoff-audit.json
+  assets/research/g13-recovery-path-20261101/mboot-code.txt
+  assets/research/g13-recovery-path-20261101/vendor-extracted/
+  assets/research/g13-recovery-path-20261101/magisk-v31.1/
+
+No TV state, USB-stick contents or Screen session was changed.

@@ -1,0 +1,186 @@
+G13 signed network update / boot experiments
+===========================================
+
+Installed revision, 2026-11-01
+-----------------------------
+boot_a SHA256:
+  f10714cb2d5d908b1e030228513b88b072a996f99471ef6e67be1fc32abd3779
+The exact revision passed a RAM boot with a full 1 MiB signed example and
+native READY at +19.28s (34.95s from bootKL). Only boot_a bytes 4096..135167
+were then written; full-partition readback matched. The journal was preserved,
+and no other partition was written. Evidence under
+assets/research/g13-network-default/:
+  ram-trial/                       same-image full-payload RAM boot
+  install-20261101T231304Z/         previous image, prefix backup and readback
+  build-snapshot.zip/.json         matching source, binaries and public key
+The snapshot excludes the private signing key. An initial install attempt
+stopped at ADB identity checks while ADB was still returning; no write ran.
+The successful attempt rechecked identity, images and evidence before writing.
+
+Three installed-image restarts passed with fresh boot IDs, native Home/display/
+audio processes, CRC-checked journal records and the same full boot_a hash:
+
+  journal seq/state   path                              reboot-to-READY
+  14 / 2              reject forged, run signed 1 MiB    45.026 s
+  15 / 4              MBOOT-input escape, no Ethernet    26.735 s
+  16 / 1              Lean, no upload                    37.594 s
+
+The valid 1048736-byte package transfer (1 MiB image plus header) took 2.563 s.
+The preceding same-size forged package was rejected with status 18. UART
+confirmed NETWORK LEAN and later native READY. The final no-upload startup
+reported READY +19.08s, bootloader=Lean. Its WAIT-to-OS-prep interval was
+5.706s; that includes the existing initrd/FDT backup after reception. The
+signed run spent 3.207s from NET through the return and those backups, suggesting
+roughly 2.5s for the empty receive window. This is a timing estimate, not a
+separately timestamped window or a worst-case bound under traffic.
+
+Evidence: verification/results.json and boot-{1,2,3}.bin. The final journal is
+sequence 16/state 1, so the next full start is Lean and the following one is
+the one-start escape. Power interruption during a sector write was not tested.
+Host app proxy/replay connections were restored after these restarts.
+Final-state hashes and service/network observations: final-state.json.
+
+Network boot implementation
+---------------------------
+Target: this G13 / AU13 / serial 18ACC22D1C47, slot a. The network gate opens
+Ethernet at 192.168.77.3:7533 before Lean OS preparation. It uses the update
+protocol unchanged: canonical LBOOTUP1 manifest, Ed25519 signature over the
+96-byte header, SHA-256 payload digest, and Begin/Data/Seal/Abort datagrams.
+There is no unsigned mode, embedded sender key or remotely chosen load address.
+
+The sender supplies a temporary bootloader, not a persistent replacement. A
+valid Seal freezes the package; after a bounded final-ACK interval the loader
+stops MAC DMA, authenticates again, copies and hashes the executable, then calls
+it. Returning resumes native OS startup. No upload or rejection also continues
+startup. Every third counted start skips Ethernet and uses MBOOT-prepared
+inputs for the same native OS; the following start returns to Lean. This is
+not Android fallback and does not change slots. See G13_LEANBOOT_DEFAULT.txt.
+
+The final polling budget is 4,000,000 iterations, chosen to target about three
+seconds without traffic. It is not a hardware-clock deadline. The first
+installed revision used 20,000,000 and measured 15.721 seconds from WAIT to
+OS prep, including those backups; that unnecessarily long wait was corrected.
+A UART byte can also
+end reception. Network traffic and signatures cannot force the loader to
+wait indefinitely, although authenticated development code can itself hang.
+
+From the repository root, on the direct Ethernet connection:
+
+  nix develop .#bootloader -c python3 tools/bootloader/update/try-network.py \
+    assets/build/leanboot-network/network-example.bin \
+    --key assets/private/network-boot/signing.pem --host 192.168.77.3 --reboot
+
+This checks the G13 serial before issuing a normal ADB reboot. Without
+--reboot it waits for a manual startup. The third-start escape has no network
+window: let it reach Home and retry on the next start. The sender tolerates
+temporary route loss and closed UDP ports while the TV starts. The host's
+existing dande-tv NetworkManager profile supplies 192.168.77.1/24.
+
+Replace the example with a flat ARM/AAPCS image, position independent or linked
+at 0x40600000, at most 1 MiB. --entry is an aligned offset within that image.
+The entry receives r0=0x40301000 and a private 64 KiB stack ending at 0x26360000.
+Its context contains LNB1 magic, ABI 1, original tags, FDT/kernel addresses,
+signed version/length, caller SCTLR and a diagnostic word. Preserve AAPCS
+registers, CPU state and resident RAM if returning. A signature authorizes the
+code; it does not prove that code satisfies the return contract.
+
+UART sequence for the returnable Lean-to-C example:
+  LEANBOOT GATE
+  LEANBOOT choice N1  (or N2)
+  LEANBOOT WAIT
+  LEANBOOT NET
+  NETWORK LEAN
+  LEANBOOT OS prep
+  LEANBOOT Linux
+  DANDE_BOOT ... READY: bootloader=Lean; ...
+
+The host-only private key is assets/private/network-boot/signing.pem, mode
+0600, ignored by Git. Retain a backup for future signing. Its raw public key
+is assets/private/network-boot/public.raw, SHA256
+21313b215aef7d28a785dbd3515529ef2adff0af8971144264f4213cfd10abb0.
+Only this public key is compiled into the resident verifier. RAM fixtures use
+a public RFC test key; that key was never installed as the resident verifier.
+
+The v4 container stays inside boot_a's existing 128 KiB kernel prefix. A
+3660-byte Lean Stage0 expands the 125008-byte gate from an 83584-byte LZ4 block.
+Packed original kernel bytes and metadata end at prefix offset 111389. The
+other boot-image bytes are unchanged. MBOOT still supplies early hardware
+initialization and the kernel handoff. The boot chain remains unlocked and
+replaceable by root; this is not an immutable secure-boot trust anchor.
+
+Code and verification boundaries
+--------------------------------
+NetworkBoot.lean reuses Update.Server.dispatch with an authentication callback
+instead of the persistent install callback. It allows repeated signed versions
+at or above its compiled minimum of 1 for development. Persistent installNext
+still requires a strictly newer version. The bank updater is not enabled on
+physical eMMC; its only hardware trial used two RAM banks as described below.
+
+All protocol, copy, validation and orchestration logic is ordinary Lean-to-C.
+HACL* crypto remains behind the centralized MemoryM/HardwareM FFI. The call
+bridge adds 14 ARM DSL instructions for the separate stack, cache handoff and
+return. No new handwritten assembly file, allocator or writable ELF globals
+is added. Full assumptions and RAM ownership: src/bootloader/Unsafe/CONTRACTS.txt.
+
+Local checks cover real ARM crypto and payload execution with MMU on/off,
+no-upload return, and six full compressed-gate paths including fallback,
+recovery, corrupt metadata, preparation and journal failures. Existing Ethernet
+checks (193 packets, six driver cases) and the 103-declaration Lean proof audit
+passed. These are finite checks and policy proofs, not an end-to-end proof of
+the network driver, signature implementation, machine code or flash durability.
+
+RAM updater verified, 2026-11-01 23:01 UTC
+-----------------------------------------
+The compiled Lean updater ran on the physical G13 through the existing
+returnable Ethernet entry. Two 32 KiB banks were entirely in RAM. No eMMC
+driver or emulator storage hooks were linked into this image.
+
+The exact 106776-byte payload has SHA256
+0ab7f105801708ce159ab2568a357a39055abdbe7459f7f06046f05f28309c9b.
+Its public verification key is the RFC test key, unsuitable for installation.
+It accepted signed versions 2 and 3, rejected forged signatures, changed image
+bytes and a version-1 downgrade, and acknowledged repeated chunks/final Seal
+packets. Version 3 filled the complete 32 KiB payload capacity. Both resulting
+banks matched independently computed host CRCs read back through MBOOT.
+
+The report counted 72 RAM-sector writes, selected bank 0/version 3, and returned
+zero. MAC RX/TX were disabled and MIU cleanup returned zero before returning
+to MBOOT. The first transfer required one three-second retry; subsequent full
+32 KiB tests completed in 0.044-0.058 seconds each. These timings include the
+trial's host operations and are not general performance guarantees.
+
+The bootstrap used a 70964-byte raw LZ4 block via Screen/YMODEM (70980 bytes
+including padding). Compressed and decoded RAM CRCs matched. Screen 96550
+remained the sole reader of ttyUSB1. No partition write or environment-save
+command was sent; ordinary MBOOT startup performed its own environment work.
+
+Evidence: assets/research/g13-update-ram/20261101T230107Z/.
+Pre-trial identity and hashes: assets/research/g13-update-ram/before/.
+Local validation: assets/build/leanboot-update-tv/{checks.json,audit.json}.
+The local run covered 118 frames, guarded RAM writes, signature-seed rejection,
+mapping rejection, busy MAC rejection, stack/interrupt restoration and DMA stop.
+Largest observed private-stack use was 8092 bytes, not a worst-case proof.
+
+The separate returnable network receiver then rejected a forged signature,
+ran the 324-byte Lean example and returned zero to MBOOT with DMA disabled.
+Evidence: assets/research/g13-update-ram/network-20261101T230405Z/.
+
+Initial resident revision
+-------------------------
+The first resident image, SHA256
+53d3a25639b7bf5ecd3f493d0a958e9eac33a4f026f3ffdc4aee53a49a4ba3dd,
+passed a matching RAM boot with signed network execution before its 128 KiB
+prefix was installed. Full partition readback matched. Three installed starts
+then passed: seq9/state4 MBOOT fallback, seq10/state1 no upload, seq11/state2
+forged-signature rejection plus signed execution. Native Home/display/audio,
+fresh boot IDs, the journal and the full boot_a hash were checked. The first
+verification script incorrectly expected a literal zero property on MBOOT;
+the property is absent there. The check was corrected and the captured first
+boot validated before continuing. This was a reporting failure, not a TV fault.
+
+This revision's longer no-upload wait motivated the shorter polling budget.
+Its RAM/restart evidence and image are retained under
+assets/research/g13-network-default/initial-poll-budget/.
+Initial installation backup: install-20261101T230814Z/ under the same root.
+That backup contains the previous working Lean image, SHA256
+516d9306c93c34b8c1b788e0b3b0310735c3a7b638fe4f154a1ea7d9618edb7e.

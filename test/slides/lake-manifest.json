@@ -1,0 +1,14 @@
+{"version": "1.3.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"type": "path",
+   "scope": "",
+   "name": "slides",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../src/slides",
+   "copy": false,
+   "configFile": "lakefile.lean"}],
+ "name": "«slides-test»",
+ "lakeDir": ".lake",
+ "fixedToolchain": false}

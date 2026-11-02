@@ -1,0 +1,92 @@
+JSBSim-derived implementation and model provenance
+===================================================
+
+Source: JSBSim-Team/jsbsim, tag v1.3.3.
+The imported JsbExact Lean implementation follows the classes named below.
+These are upstream attributions, not claims that the Lean port is unmodified.
+The port and generated model data are modifications dated 2026-11-01 in this
+TV snapshot; original import revision is recorded in README.txt.
+
+The upstream library source headers permit LGPL version 2 or any later
+version; the upstream COPYING file supplies LGPL 2.1. The full LGPL 2.1 text
+is included at ../../../LICENSES/LGPL-2.1.txt. Preserve these notices and the
+applicable LGPL terms for derivative implementation code. No warranty.
+
+Upstream copyright notices from the corresponding class implementations:
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/FGFDMExec.cpp
+Copyright (C) 1999  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/math/FGTable.cpp
+Copyright (C) 2001  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/math/FGColumnVector3.cpp
+Copyright (C) 1998 Tony Peden and Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/math/FGMatrix33.cpp
+Copyright (C) 1998 by the authors above
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/math/FGQuaternion.cpp
+Copyright (C) 1999  Jon S. Berndt (jon@jsbsim.org)
+(C) 2004  Mathias Froehlich (Mathias.Froehlich@web.de)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/FGPropagate.cpp
+Copyright (C) 1999  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/FGInertial.cpp
+Copyright (C) 2000  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/FGAtmosphere.cpp
+Copyright (C) 2011  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/FGFCS.cpp
+Copyright (C) 1999  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/FGMassBalance.cpp
+Copyright (C) 2000  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/FGAuxiliary.cpp
+Copyright (C) 1999  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/FGPropulsion.cpp
+Copyright (C) 2000  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/FGAerodynamics.cpp
+Copyright (C) 2000  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/FGGroundReactions.cpp
+Copyright (C) 2000  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/FGAircraft.cpp
+Copyright (C) 1999  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/FGAccelerations.cpp
+Copyright (C) 2011  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/FGLGear.cpp
+Copyright (C) 1999  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/propulsion/FGPiston.cpp
+Copyright (C) 2000  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/propulsion/FGPropeller.cpp
+Copyright (C) 2000  Jon S. Berndt (jon@jsbsim.org)
+
+https://raw.githubusercontent.com/JSBSim-Team/jsbsim/v1.3.3/src/models/propulsion/FGTank.cpp
+Copyright (C) 1999  Jon S. Berndt (jon@jsbsim.org)
+
+Aircraft model data is a distinct provenance item:
+https://github.com/JSBSim-Team/jsbsim/blob/v1.3.3/aircraft/c172p/c172p.xml
+Its header identifies the author as Unknown and describes educational and
+entertainment use based on public data, reports, textbooks, and estimates.
+Its explicit restriction is:
+"This simulation model is not endorsed by the manufacturer. This model is not
+to be sold."
+
+That notice applies to the source of JsbExact/C172Gen.lean. This free source
+release preserves it; do not assume unrestricted commercial/model resale
+rights from the library LGPL or the City Flight author permission. Obtain
+clarification before selling the model or a product incorporating it.
+
+This notice records the identified upstream classes; it is not an exhaustive
+file-by-file derivation or legal analysis of every line of the imported port.

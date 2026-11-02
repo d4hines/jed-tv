@@ -1,0 +1,31 @@
+The complete PNY Fastbootd-trigger USB image was archived on the laptop before
+this stick was reformatted. Local archive directory:
+
+  /home/eduardo/tv_hack/assets/backups/usb-fastboot-trigger-20261031T054144Z/
+
+Read its README.txt and manifest.json. The complete device image preserves
+the old MBR, FAT32 filesystem, special recovery label and all sectors. It is
+a USB image, not TV firmware. The original compressed archive is kept on the
+laptop. This stick also contains a split copy under:
+
+  TCL32Q3K/backups/usb-fastboot-trigger-20261031T054144Z/
+
+That is the original verified export's path. New exports made after the laptop
+assets/ reorganization use TCL32Q3K/assets/backups/usb-fastboot-trigger-20261031T054144Z/.
+Consult the USB's COPY_MANIFEST.json for its actual path.
+
+From that directory, concatenate its numbered parts in order onto another
+filesystem with enough space for the complete archive:
+
+  cat pny-fastboot-trigger.img.zst.part* > /path/on/another/disk/pny-fastboot-trigger.img.zst
+
+Compare the assembled file's sha256sum with archive_sha256 in manifest.json
+or original-SHA256SUMS.txt. Its byte count must equal archive_bytes. The USB
+root SHA256SUMS also checks every numbered part separately. The archive's
+decompressed size is 31,042,043,904 bytes, and raw_sha256 is in manifest.json.
+The complete .zst file exceeds FAT32's per-file limit, hence these split parts.
+
+Restoring the old USB image would erase the new TVBACKUP contents. Preserve
+those contents elsewhere first, re-identify and unmount the target USB, and
+verify any restoration. The existing label-patch script is tied to the old
+filesystem and must not be run against the newly formatted stick.

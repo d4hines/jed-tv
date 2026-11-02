@@ -1,0 +1,29 @@
+buildDir = "../../../assets/build/lake/zr"
+name = "ZrLean"
+defaultTargets = ["ZrLean", "ZrTv", "ZrAsm", "ZrAbi"]
+
+# What runs on the TV, and the Lean it is generated from. The host tools that
+# build and test it (zr-build, zr-cgen, zr-asm-gen, ...) are a separate
+# package, tools/lean/zr; the tests are under test/lean/zr.
+
+# The Lean runtime ("ZrLow"): every module is compiled to C by zr-build and
+# linked into Lean apps instead of upstream's libleanrt. Copied from
+# dande-router; see README.md.
+[[lean_lib]]
+name = "ZrLean"
+
+# Linux system calls and the app contract (tv_app_v1) for Lean apps, in the
+# runtime's style; linked into apps only (zr-build: OUT/gen/tv).
+[[lean_lib]]
+name = "ZrTv"
+
+# The 32-bit ARM assembly DSL: AST, executable semantics and printer
+# (zr-asm-gen prints the runtime's, the apps' and FFmpeg's assembly from it).
+[[lean_lib]]
+name = "ZrAsm"
+
+# Typed descriptions of the generated freestanding C headers (lean.h etc.;
+# no root module: every ZrAbi.* module).
+[[lean_lib]]
+name = "ZrAbi"
+globs = ["ZrAbi.+"]

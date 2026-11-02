@@ -1,0 +1,129 @@
+G06/V109 firmware implications for the minimal Rust TV and QEMU
+2026-10-31. Offline only; no TV connection, boot change or partition write.
+
+Scope and provenance
+--------------------
+Inspected original G06 V109 backups, not G13 or newer V122 firmware.
+assets/research/firmware-implications/source-verification.json records fresh
+SHA256 checks against the backup SHA256SUMS for boot, MBOOT, tvconfig,
+tvservice and tclconfig. All five matched. Independently extracting vendor
+from the original super.img with lpunpack produced the same SHA256 as the
+previously extracted vendor image:
+8de133daa7fe13a4910136cde938852dc182c309aef7fdc84c6656b21546dcd3.
+Generated extracts, ELF symbol/dependency dumps and disassembly live in
+assets/research/firmware-implications/. extracted.json records extracted
+file hashes. Filesystem access used debugfs without -w; originals unchanged.
+
+1. Display module loading is insufficient
+-----------------------------------------
+Exact mstar_fbdev_mi.ko, mstar_fb_open at .text+0xb1c:
+  0xb38 calls mstar_FB_GetMiDaemonInitStatus
+  0xb40 branches to failure when readiness is zero
+  0xb88 sets the return value to -22 (EINVAL)
+The readiness helper at 0x4c74 calls MI_SYS_GetAttr at 0x4cb0, attribute 5,
+and reads a byte of returned status. This is executable control flow, not
+just a diagnostic string. It establishes an initialization-status gate;
+it does not establish that the original vendor daemon is the only possible
+way to satisfy that gate. Do not spoof the flag without doing actual init.
+
+The module's probe opens /vendor/tvconfig/config/sys.ini (with a /config
+fallback), resolves gOSDDefineConfigINI, and parses FBDEV sections. Driver
+diagnostics explicitly report missing OsdDefine.ini or FBDEV sections.
+Exact tvconfig config/OSD/OsdDefine.ini defines:
+  FBDEV0, layer 1, 1280x720, format enum 8, FB_IOMMU=1,
+  FB_DFB_RESERVED=1; the fixed FB_MMAP_ID is commented out.
+Neither the enum nor reservation flag proves an RGB bit layout or page count.
+The application should continue reading fb bitfields and memory geometry.
+
+The current agent1 make_tv_boot.py adds modules but none of these configs
+or MI userspace initialization. m1b/m1c are not complete display bring-up
+images. The stock init.fusion.rc module order is useful, but not sufficient.
+Stock mik_init.ini also sets MI_DISP_INIT, MI_OSD_INIT, MI_AUDIO_INIT,
+MI_AOUT_INIT and MI_PCM_INIT to zero. Comments describe these as controls
+for initialization while loading mik.ko. Default values are not a safe way
+to infer that insmod brings up the panel or speaker.
+
+sys.ini additionally points at a device-specific Customer_185_32TCON_B07-1
+file under /tclconfig. Copying just the OSD INIs is not a proven complete
+configuration dependency closure. Preserve the actual board configuration.
+
+2. ALSA is not yet a demonstrated standalone speaker backend
+----------------------------------------------------------
+Exact audio.primary.mt5867.so normal mi_common_pcm_open calls MI_PCM_Open
+(Thumb address 0x388d4) and MI_AOUT_ConnectInput (0x38908).
+mi_common_pcm_write calls MI_PCM_Write at 0x38ef2. mi_device_init calls
+MI_SYS_Init at 0x365c8. The HAL also contains a distinct tinyalsa mmap path;
+its presence does not show that simply opening pcmC0D0p drives the speaker.
+The stock audio policy's primary output is S16_LE, stereo, 48000 Hz.
+That is an Android policy declaration, not a hardware ALSA rate probe.
+
+Implication: retain an audio-backend boundary; prove audible PCM with MI
+routing initialized before treating the current raw-ALSA implementation as
+the final target backend. QEMU virtio-snd cannot verify this routing.
+
+3. Android-free vendor libraries exist, but bring a substantial closure
+----------------------------------------------------------------------
+Stock /vendor/bin/midaemon.sh starts /mnt/vendor/tvservice/bin/midaemon
+with glibc libraries from /mnt/vendor/tvservice/glibc. The binary's ELF
+interpreter is /mnt/vendor/tvservice/glibc/ld-linux.so.3. It imports
+MI_SYS_Init, MI_DISP_Init, MI_OSD_Init and other subsystem init functions.
+Its config path includes /vendor/tvconfig/config/mik_init.ini.
+
+tvservice contains libmi.so, libmi_server.so, libapiVDEC.so, the glibc
+runtime, and a non-Android libOMX.MStar.so. Exported interfaces include
+MI_VIDEO_Init/Open/Start and MApi_VDEC_EX_Init/Play/GetNextDispFrame.
+These are concrete reverse-engineering leads for native hardware decode.
+They do not supply C struct layouts, buffer ownership rules or a working
+Rust decoder integration. Android vendor libmi3/libOMX additionally depend
+on Android libraries and cannot simply be loaded into static musl.
+
+The glibc midaemon itself has 32 DT_NEEDED entries, including DirectFB,
+libmi_server, libmmsdk, libmdroid, TLS/network and media libraries. A native
+name does not imply a small or self-contained runtime. Its exact transitive
+closure and possible Android service dependencies remain untraced.
+Keeping it would relax the goal that every userspace process is ours.
+
+Recommendation: benchmark software decode as planned, but first establish
+the minimum MI display/audio initialization. Retain software decode as the
+portable path; investigate native hardware decode if its measured benefit
+justifies the additional vendor runtime or reverse-engineering work.
+
+4. Boot plan has already been superseded by device-track evidence
+---------------------------------------------------------------
+The existing g06-ram-boot-status.md records no temporary boot handler in
+the inspected Fastboot table, successful kexec load/unload, and two failed
+actual handoffs. Those are prior project findings, not new live tests in
+this investigation. Agent1's fastboot boot instructions are not a usable
+established path. QEMU cannot validate MediaTek shutdown/handoff or panel
+initialization. Keep boot transport separate from app validation.
+
+5. QEMU changes made in the agent1 worktree
+-----------------------------------------
+test/tv.sh now defaults to the ARM32 faithful profile; fast remains explicit.
+Faithful networking uses guest 192.168.77.2/24 and host 192.168.77.1.
+For tvinit, ip=off disables kernel network autoconfiguration and existing
+userspace ioctls configure eth0. This matches the target CONFIG_IP_PNP=n
+requirement without requiring a rebuild of the QEMU kernel.
+Direct standalone player tests still need QEMU kernel static IP setup;
+their fidelity record explicitly calls out that shortcut.
+Faithful RTC starts at the observed incorrect 2025-01-17 date, rather than
+silently inheriting the Mac's correct wall clock. Offline replay is default.
+Every run writes fidelity.json with app/kernel hashes, modeled constraints
+and explicit gaps from test/g06-firmware.json.
+
+Validation: existing platform self-tests passed on fast and faithful (2/2).
+New G06 startup gate passed: PID1 static address, ip=off and stale guest date.
+New G06 end-to-end gate also passed: home launches Coffee Run from the local
+replay server over userspace-configured Ethernet; Home stops it and returns
+to the menu. The resulting screenshot was visually inspected. Both new
+gates are in test/check.py; run with -k 'G06:'.
+Initial sandboxed runs failed to bind QMP sockets; the same tests passed
+after execution with local-socket permission. No live YouTube was contacted.
+
+Still unmodeled: MediaTek board/MMIO/interrupts, vendor init and failure
+states, MI ioctls/IOMMU/panel/speaker routing, target reserved RAM and CPU
+timing, exact 4.19 syscall availability, actual remote event topology.
+The QEMU kernel is 6.18.57, not 4.19.116. Stock modules cannot be inserted
+into it. A fake MI-ready flag would hide the hardware gate, not resolve it.
+Next useful fidelity work is a documented MI initialization contract and
+failure-case tests after tracing the real call sequence and argument ABI.

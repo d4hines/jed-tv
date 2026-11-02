@@ -1,0 +1,223 @@
+G13 AU13: native launcher startup preparation
+2026-11-01 UTC
+
+Current result
+--------------
+Startup diagnostics (2026-11-01): native scripts now print timestamped
+DANDE_BOOT milestones and a final READY directly on UART. Three normal reboot
+captures measured 18.67/18.38/18.66 s from Linux start to software readiness;
+the owner confirmed Home visible by READY on the final repeat.
+SELinux compilation alone takes about 4.8 s. Framework-service cleanup now
+overlaps launcher setup. See G13_DEVELOPMENT.txt for the timings, limits,
+script-only installation/rollback and retained evidence. No new flash.
+The later parallel-audio trial starts the audio client while Home is being
+prepared, but final READY remained 18.80 s; it still waits on vendor audio.
+
+Startup logo update (2026-11-01): MBOOT's unlocked-warning JPEG now shows
+the white Lean wordmark on black; the owner confirmed it after reboot.
+Ethernet ADB/root and native launcher startup passed. This is a separate
+asset-only MBOOT write; init_boot_a and the native configuration below are
+unchanged. Read G13_UNLOCK_LOGO.txt for exact hashes, evidence and rollback.
+
+Ethernet update (2026-11-01T19:15Z): native startup now sets a persistent
+192.168.77.3/24 address and authenticated ADB :5555. A normal reboot without
+USB data restored the address, route and launcher; Ethernet adb root and
+the host proxy passed afterward. Read G13_DEVELOPMENT.txt for commands,
+netd ordering/root-socket fixes, current configuration and compatibility.
+The image below is unchanged. Latest config backup/manifest:
+assets/research/g13-network-config-20261101T191302Z/; final boot evidence:
+assets/research/g13-ethernet-20261101/reboot-ethernet-verified.txt.
+The revision-4 files below are the earlier pre-Ethernet snapshot.
+
+Automatic native startup is now enabled and verified with configuration
+revision 4. A fresh boot started tvinit, the correctly sized native display
+and audio bridge with no app_process or system_server and no manual startup
+intervention. Stock init remains PID 1. The owner confirmed audible tone and
+visible launcher during the preceding native test; all 14 audio protocol
+cases passed, including a first request after fresh boot.
+
+The native Power path has been exercised with one KEY_POWER press/release.
+It reached kernel "reboot: Power down" and PM51 "Power Down", retaining the
+native selection. Firmware reported a secondary core was not shut down and
+selected a cold start for next power-on. Return from standby is awaiting the
+owner's ordinary Power press. Full removal of mains has not been tested.
+
+Earlier media configuration/manifest: config-v4/ in the artifact directory
+below. Current installed readback: assets/research/g13-ethernet-20261101/final-config/.
+Live /metadata/dande-tv/mode is persistent and entry.rc equals native-entry.rc.
+The init_boot image is unchanged from the single authorized flash below.
+Evidence: flash-test/native-attempt-3-result.json and native-attempt-3.png;
+native-attempt-2-protocol.txt; power-cycle.json and the retained UART log.
+
+Boot fixes found during validation:
+  - Early-init's audioserver bind remount did not survive as seen by later
+    services. Reapply the suid flag from boot.sh, after the stock mount setup.
+    This permits the normal init-to-audioserver security transition.
+  - Disabling the metrics daemon alone left the first AudioTrack open
+    waiting ten seconds for media.metrics. Set media.metrics.enabled=0
+    before audio processes start; the fresh-client 14-case test then passes.
+  - SurfaceFlinger retains a 1280x720 layer stack without WindowManager.
+    Use that size; hardware scales it to the 1920x1080 panel. The original
+    assumption of a 1920x1080 logical surface cropped the launcher.
+  - Successful launcher exit (Power) requests orderly stock-init shutdown;
+    unexpected failure still selects Android fallback and reboots.
+
+Flash and initial validation history
+-----------------------------------
+At 09:28 UTC the owner authorized the flash ("let's flash it"). Candidate
+0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b was flashed
+to init_boot_a after all exact-target Fastboot checks passed. Sending,
+writing and normal reboot returned OKAY; UART confirms 8,388,608 bytes
+written. MBOOT entered standby afterward, as with the earlier root flash.
+After the owner pressed Power, Android fallback completed boot, adb root
+worked, and the full installed partition hash matched the candidate.
+USB authorization was saved with Always allow. Native tests followed.
+Evidence: flash-test/preflight.json, fastboot-checks.json and flash.json.
+
+Owner confirmed "Slide visible and tone audible" with zygote stopped and
+no system_server. The 14-case audio protocol probe passed in that state.
+That original test was a warm handoff; the fresh-boot results above supersede
+its cold-start limitation.
+The bounded trial restored the original audioserver mount and restarted
+zygote afterward. Before the authorized flash above, live init_boot_a
+matched the working adb-root image. Preparation itself did not flash/reboot.
+
+The owner wants power-on to go directly to our launcher, skipping Google TV.
+The prepared first stage keeps stock init as PID 1 and the vendor graphics,
+audio, storage and USB services. It replaces the zygote command with our
+launcher supervisor, so app_process and system_server are not started.
+It is not yet a custom PID-1 implementation or an Android-free userspace.
+
+Why the warm handoff works
+-------------------------
+The earlier dark screen was Android PowerManager going to sleep, not the
+launcher exiting. Waking through Android restored the visible launcher.
+Native boot holds a kernel wakelock instead of relying on PowerManager.
+
+Stock audioserver waits for ActivityManager, package lookup and scheduling
+services after framework removal. src/audio/standalone-app-state.c supplies
+the native-only replacements. Its ARM32 UidInfo return has the same 48-byte
+layout on this G13. The shared object MUST have DF_1_GLOBAL: libaudiohal@7.1
+is dlopened and otherwise misses the requestPriority override and blocks.
+The successful trial used a DT_NEEDED entry in a COPY of audioserver, mounted
+over /system/bin/audioserver in RAM. The bind mount must permit suid for the
+stock init-to-audioserver SELinux transition. System storage is unchanged.
+The global shim and patched audioserver built by the candidate builder are
+byte-identical to those used in the successful warm trial.
+
+The native audio bridge now recognizes G13's setStreamVolumeIndex symbol
+with audio_devices_t, alongside the older unsigned-int spelling. A fresh
+--init-policy probe successfully set media stream 3 to speaker index 30/100.
+The app's separate low software gain remains unchanged.
+
+Evidence under assets/research/g13-native-pid1-20261101/:
+  shim-protocol-confirmed.txt: 14 passes, stopped zygote before and after
+  native-slide.png: captured slide during the no-framework trial
+  trial-lifecycle.txt: earlier timer interference, not the final proof
+  candidate/staging.json: current state and full staging verification
+Do not use shim-protocol4.txt alone as proof: an older cleanup timer briefly
+restarted zygote during that attempt; the confirmed test repeated it cleanly.
+
+Candidate and staging
+---------------------
+Image: candidate/init_boot-native-startup.img (8,388,608 bytes)
+SHA256: 0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b
+Only two existing files in the verified root ramdisk change:
+  adb_debug.prop adds ro.boot.init_rc=/metadata/dande-tv/entry.rc
+  userdebug_plat_sepolicy.cil allows init to enter su for our shell and read
+  the metadata configuration. Only su remains permissive.
+All other 23 members, including the original stock init, are unchanged.
+The repacked image was unpacked again and every member/metadata compared.
+CIL compiled with the exact previously captured policy inputs and -N;
+this disables neverallow checks, as in the prior owner-debug root image.
+
+Android 14 loads debug properties before LoadBootScripts. /metadata is a
+first_stage_mount F2FS partition in this TV's exact vendor fstab. Our entry
+file imports the same six stock paths in their original order. The native
+entry adds native.rc last, where override replaces zygote and bootanim.
+Stock init's restorecon_recursive /metadata remains compatible: config uses
+the normal metadata_file label, root ownership, directory 0700/files 0600.
+Metadata is noexec; scripts are read by /system/bin/sh, while the audio ELF
+and library are copied to /dev and labelled before services start.
+
+Initial staging readback verified /metadata/dande-tv with entry equal to
+android.rc and mode disabled. Staging alone did not change the previous
+boot image's startup. After the flash and boot tests, config-v4 now selects
+native-entry.rc with persistent mode; do not delete this directory.
+The updated bridge and supervisor are staged in /data/local/tmp/dande-g13;
+their previous versions are backed up in candidate/device-before/.
+
+Tools (prefix with nix shell nixpkgs#python3 -c if python3 is not on PATH):
+  python3 tools/native-app/build-g13-boot.py --output <NEW assets directory>
+  python3 tools/native-app/g13-boot.py stage <candidate directory>
+The builder is host-only. Staging requires the current verified root image
+and refuses an existing config directory; it never flashes or reboots.
+
+Validation sequence and repeat procedure
+----------------------------------------
+Steps 1-6 were followed, with the configuration corrections above. The final
+normal power-on check is pending; ordinary reboot startup has passed.
+1. Keep the existing Screen UART session capturing; do not open another
+   serial reader. Preserve the exact working root image and stock rollback.
+2. Enter bootloader, reidentify Fastboot, and recheck product tcl9216,
+   serial 18ACC22D1C47, bootloader 01.01.250814, userspace=no, unlocked=yes,
+   secure=no, current-slot=a, init_boot_a size 0x00800000.
+3. Flash ONLY the candidate to init_boot_a, normal reboot. First verify the
+   Android fallback boots and adb root works. MBOOT may stop in standby;
+   one ordinary Power press was needed after the preceding root flash.
+4. Select one-shot mode, then normal reboot:
+     python3 tools/native-app/g13-boot.py once
+   early.sh replaces entry.rc with android.rc and syncs it BEFORE starting
+   our services. The already-parsed native startup runs for this boot only.
+   Startup failures after boot.sh runs request an Android reboot. A hang
+   before early.sh, missing metadata/config, or early kernel/init failure
+   is outside that fallback's coverage; retain bootloader recovery access.
+5. Verify visible launcher, audible PCM, real remote navigation, no
+   system_server/app_process, stable frame/audio logs, correct init_boot
+   partition hash, USB ADB and entry.rc already restored to android.rc.
+   The zygote service NAME is reused for our shell, so "zygote running" by
+   itself no longer establishes an Android framework process.
+6. Only after the native boot passes, enable automatic startup:
+     python3 tools/native-app/g13-boot.py persistent
+   This command requires native_ready, launcher_ready, a live tvinit and
+   absent system_server. Check another normal startup before declaring the
+   owner's power-on goal complete. Full mains-off startup, remote standby
+   and wake still need separate physical verification.
+
+Local Slides/Doom/launcher do not require host networking. Live YouTube
+currently depends on the existing host proxy and USB reverse mapping, which
+must be restored after a reboot. With host-services.json's processes still
+running, map localabstract:dande-g13-proxy/replay to their saved TCP ports.
+Also set the TV's UTC clock from the host; its offline RTC had been in 2025.
+Do not run the full manual runner over an init-managed native launcher.
+
+Limitations: a submitted frame does not by itself prove the physical panel
+lit; retain the owner's observations as separate evidence. The candidate
+suppresses Android's boot animation; the separate MBOOT asset replacement
+now displays Lean in place of its unlocked warning (see G13_UNLOCK_LOGO.txt).
+Standby return and full mains removal need their physical checks.
+Stock recovery with the new init_rc property has not been validated;
+restore the known-good image before relying on it.
+
+Rollback
+--------
+With working ADB on the candidate, choose the Android entry and reboot:
+  python3 tools/native-app/g13-boot.py android
+Do not delete /metadata/dande-tv while the candidate is installed: stock
+init does not automatically use its default scripts if custom init_rc is
+nonempty but missing. Restore the previous image BEFORE removing config.
+
+If ADB/startup fails, use the already demonstrated UART -> mstar_usb ->
+bootloader Fastboot path and restore ONLY init_boot_a from:
+  assets/research/g13-adb-root-20261101/candidate/init_boot-adb-root.img
+  SHA256 afc34332ba1b0f4b737eecdc512016e94bb3b9c058c920f411ef53c0393a70a4
+This is the currently working rooted image, verified by fresh live hash.
+Exact unmodified stock fallback, previously used to recover this TV:
+  assets/backups/g13-v013-stock-20261031/init_boot_a.img
+  SHA256 ba21e944050398f71b9d137f4c569e930dd912f94aa50d44392aa94f61dfa0b9
+No unlock, relock, erase, slot change, or other-model image is needed.
+
+Primary implementation references (exact copies under aosp/):
+https://android.googlesource.com/platform/system/core/+/refs/tags/android-14.0.0_r1/init/init.cpp
+https://android.googlesource.com/platform/system/core/+/refs/tags/android-14.0.0_r1/init/property_service.cpp
+https://android.googlesource.com/platform/system/core/+/refs/tags/android-14.0.0_r1/init/import_parser.cpp

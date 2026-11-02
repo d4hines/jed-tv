@@ -1,0 +1,16 @@
+name = "CryptoTest"
+defaultTargets = ["CryptoTest", "transcript"]
+
+# Only the Yt sources this test needs are compiled, here, as a local library
+# rooted at src/lean/yt (not all of Yt as a [[require]]d package).
+[[lean_lib]]
+name = "YtSrc"
+srcDir = "../../../../src/lean/yt"
+globs = ["Yt.Bytes", "Yt.Crypto.+", "Yt.X509.+"]
+
+[[lean_lib]]
+name = "CryptoTest"
+
+[[lean_exe]]
+name = "transcript"
+root = "Main"

@@ -1,0 +1,25 @@
+# Feasibility probe (not part of the nolibc workspace): can sunfishcode's
+# c-scape (libc in Rust, on origin + rustix) be built as `libc.a` for our musl
+# targets? It needs nightly features; we try with RUSTC_BOOTSTRAP=1 on 1.92.
+[package]
+name = "probe-cscape"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+c-scape = { version = "0.22.3", default-features = false, features = [
+    "take-charge", "thread", "call-main", "malloc-via-crates", "threadsafe-setenv",
+    "panic-handler-trap", "global-allocator", "eh-personality-continue",
+] }
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = 3
+
+[workspace]
