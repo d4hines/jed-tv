@@ -1,6 +1,6 @@
 {
-  "source_commit": "120f0b614e2913b23dab6473400bf52db967111a",
-  "source_ref": "internal/main (local snapshot; SSH refresh unavailable)",
+  "source_commit": "5a0fcfde84ad115b9bb567d76cf5b087dd23b386",
+  "source_ref": "internal/main (fetched 2026-11-01)",
   "files": [
     {
       "path": ".gitignore",
@@ -20,6 +20,22 @@
       "output_sha256": "4bc901109911e43d03a27db2b1ab9a76d0e4329e08b30ac65b3d55c386b41a65"
     },
     {
+      "path": "LICENSES/GPL-2.0.txt",
+      "decision": "included",
+      "reason": "License text or third-party notice; see THIRD_PARTY.md",
+      "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+      "bytes": 18092,
+      "output_sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+      "path": "LICENSES/LGPL-2.1.txt",
+      "decision": "included",
+      "reason": "License text or third-party notice; see THIRD_PARTY.md",
+      "sha256": "246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30",
+      "bytes": 26517,
+      "output_sha256": "246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30"
+    },
+    {
       "path": "NEXT_STEPS.md",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
@@ -36,12 +52,12 @@
       "output_sha256": "8c0e80f0ebe3e4f7bac4dfd721b41770b86d1276d69faa80b70cb90f9deed8af"
     },
     {
-      "path": "README.txt",
+      "path": "README.md",
       "decision": "included",
-      "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "528e7fd0dc0ef3c025dbdee5b1308cd35eadc607dacfcf8e3035a2e1e1d9ef5e",
-      "bytes": 11936,
-      "output_sha256": "528e7fd0dc0ef3c025dbdee5b1308cd35eadc607dacfcf8e3035a2e1e1d9ef5e"
+      "reason": "Project README; the export's provenance and licensing notes are appended as an 'About this copy' section",
+      "sha256": "e300b88496479804760698e13a8594cd14f6e511181b625433bdbb9dd9c9e320",
+      "bytes": 2358,
+      "output_sha256": "f74169c09dea7615689494121d4c8201c95783832f9d4db3680f5339bc4f7d4a"
     },
     {
       "path": "RECOVERY_NOTES.txt",
@@ -3152,14 +3168,6 @@
       "sha256": "c9e26d3d14b78aa17edd7edf851ee34712930a88fc1756852d59feebaac705ad",
       "bytes": 354,
       "output_sha256": "c9e26d3d14b78aa17edd7edf851ee34712930a88fc1756852d59feebaac705ad"
-    },
-    {
-      "path": "src/README.md",
-      "decision": "included",
-      "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "ffb5ad24b7c6572cb4b4a95079e7ec0272dfac091e0dd00854c45bc893a4ba41",
-      "bytes": 3687,
-      "output_sha256": "ffb5ad24b7c6572cb4b4a95079e7ec0272dfac091e0dd00854c45bc893a4ba41"
     },
     {
       "path": "src/axiomtv/gfx/Cargo.toml",
@@ -10115,6 +10123,22 @@
       "output_sha256": "8aa93cf72a847dbccb0525ebb68c50e2900251b3f8dc25e013294564d40bab3c"
     },
     {
+      "path": "src/third_party/cityflight/JSBSIM_NOTICES.txt",
+      "decision": "included",
+      "reason": "License text or third-party notice; see THIRD_PARTY.md",
+      "sha256": "287f0de0f0cecb7ea4d5a8e7daa3fbbc256077aa947bed237f773301053a6645",
+      "bytes": 4509,
+      "output_sha256": "287f0de0f0cecb7ea4d5a8e7daa3fbbc256077aa947bed237f773301053a6645"
+    },
+    {
+      "path": "src/third_party/cityflight/PUBLICATION.txt",
+      "decision": "included",
+      "reason": "License text or third-party notice; see THIRD_PARTY.md",
+      "sha256": "466355f6f309e73f862dfb6b5e20f5c9e04ebc2c78c2346b697027c0f8a7fc9a",
+      "bytes": 989,
+      "output_sha256": "466355f6f309e73f862dfb6b5e20f5c9e04ebc2c78c2346b697027c0f8a7fc9a"
+    },
+    {
       "path": "src/third_party/cityflight/README.txt",
       "decision": "included",
       "reason": "Import provenance expressly identifies this wrapper as team-owned, or factual toolchain metadata",
@@ -16805,13 +16829,14 @@
   ],
   "review_revision": 2,
   "verification": {
-    "retained_original_files": 2095,
+    "retained_original_files": 2098,
     "excluded_original_files": 5,
     "retained_lean_files": 585,
     "excluded_lean_files": 0,
     "retained_original_research_files": 338,
     "relocated_original_files": 1,
     "modified_original_files": [
+      "README.md",
       "research/ROOT_READBACK_NOTES.txt",
       "research/new-tv-20261031T183329Z/query-firmware.py",
       "research/query-public-firmware.py",
@@ -16839,6 +16864,13 @@
       "changed_original_files": 44,
       "remote_refresh": "SSH authentication failed; used local internal/main",
       "sharing_policy": "Existing exclusions, redactions, attribution and notices preserved"
+    },
+    {
+      "from_source_commit": "120f0b614e2913b23dab6473400bf52db967111a",
+      "to_source_commit": "5a0fcfde84ad115b9bb567d76cf5b087dd23b386",
+      "changed_original_files": 8,
+      "remote_refresh": "Fetched internal/main",
+      "sharing_policy": "License texts and City Flight notices added unchanged; README.txt and src/README.md removed as upstream; root README.md imported with the export notes appended"
     }
   ]
 }

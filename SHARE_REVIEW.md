@@ -15,13 +15,14 @@ that distribution rules in every jurisdiction are identical.
 
 ## What this copy contains
 
-Source: local `internal/main` at `120f0b6` (full ID in the manifest).
-The latest SSH refresh failed authentication; no newer remote state is claimed.
+Source: fetched `internal/main` at `5a0fcfd` (full ID in the manifest).
 An incremental update imports 44 changed original files since `85528fe`,
 including the Linux confinement model and proofs, City Flight performance
-work, and G13 signed-app deployment fixes and research. Existing exclusions,
-four content redactions/edits, and license notices are preserved.
-This copy retains **2,095 of 2,100** original files, including all
+work, and G13 signed-app deployment fixes and research. A second, from
+`120f0b6`, adds the GPL/LGPL texts and City Flight notices, the new root
+README, and the removal of `README.txt` and `src/README.md`. Existing
+exclusions, content redactions/edits, and license notices are preserved.
+This copy retains **2,098 of 2,103** original files, including all
 **585 Lean files** and **338 original research files**, with the original
 AGENTS.md archived as `research/archive/INTERNAL_AGENT_NOTES.txt`.
 The current AGENTS.md remains
@@ -41,7 +42,9 @@ embedded vendor signing constant was removed. The factory-root research note
 keeps its findings but omits the executable token-extraction, helper-deployment,
 replay, and cleanup recipe. The Lean wordmark is unchanged, with a trademark
 symbol and wording identifying the programming language and independent TV
-project. Other retained original files are byte-identical.
+project. The root README keeps the team's text and appends this copy's
+provenance and licensing notes. Other retained original files are
+byte-identical.
 
 ## Remaining exclusions — 5 files
 
@@ -132,7 +135,7 @@ and [C172 model notice](https://github.com/JSBSim-Team/jsbsim/blob/v1.3.3/aircra
 ## Verification and delivery
 
 The manifest records each original path, source hash, destination if moved,
-output hash, and the four content edits described above. Credential-pattern
+output hash, and the five content edits described above. Credential-pattern
 checks and a scan for the known removed vendor constant were repeated.
 The two changed query clients were checked for rejection before network access
 when no key is supplied; their Python syntax and the changed SVG were checked.
