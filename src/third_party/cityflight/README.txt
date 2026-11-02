@@ -15,10 +15,19 @@ lean/   JsbExact (a Lean 4 port of JSBSim 1.3.3's c172p model, bit-exact with
         JSBSim on macOS) and CityJsb (the flight-sim plant over it). Built for
         the TV by demo/flight.nix: Lean emits C, zig compiles it for 32-bit ARM
         with the Lean runtime from tools/lean-arm/build.sh. lakefile.lean here
-        is ours; it only names the two libraries.
-c/      The project's C API over CityJsb (cityjsb.h, cityjsb_abi.c).
-        The sin/cos shims (their jxmath.c) are Darwin-specific; the Linux
-        version is written by demo/flight.nix.
+        is ours. Ours too are JsbExact/F/ and CityJsb/F/: a copy of the model
+        with every structure field typed `Float` instead of a generic scalar,
+        so Lean stores the numbers unboxed (the generic version allocates one
+        heap object per number, which made a plant step about 2.3x slower).
+        The operations are the same in the same order; the exported plant
+        entry points in CityJsb/Plant.lean call the F version. Tools/JsbDiff.lean
+        (`lake exe jsbdiff`) steps both versions 80,000 frames and checks every
+        state and observation field bit for bit, and times them.
+c/      The project's C API over CityJsb (cityjsb.h, cityjsb_abi.c; the
+        latter marks the plant state multi-threaded when it is cloned, for
+        the filter's rollout workers). The sin/cos shims (their jxmath.c) are
+        Darwin-specific; the Linux version is written by demo/flight.nix and
+        jxmath_host.c is the same for the host-side differential test.
 src/    The GUI-free part of their Rust crate `cityflight`: sim.rs (the
         simulation loop), envfilter.rs (the safety filter), escape.rs,
         filter.rs, model.rs, pilot.rs, world.rs (the procedural city), jsb.rs

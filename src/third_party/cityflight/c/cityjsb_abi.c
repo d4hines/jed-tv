@@ -69,10 +69,17 @@ API void cityjsb_step(cityjsb *p, double elev, double ail, double rud, double th
   p->st = st;
 }
 
+// The two handles share the state object until one of them steps. The gate filter steps clones on worker
+// threads, so the shared object (and everything it references) must count references atomically: Lean only
+// does that for objects marked multi-threaded. lean_mark_mt marks the object graph once and is a no-op on
+// objects already marked; objects a step creates afterwards belong to the thread that made them. Every thread
+// that calls in goes through ensure_runtime first, which gives threads the Lean runtime did not create their
+// own allocator state (lean_initialize_thread) before any object is touched.
 API cityjsb *cityjsb_clone(const cityjsb *p) {
   ensure_runtime();
   cityjsb *c = malloc(sizeof *c);
   if (!c) return NULL;
+  lean_mark_mt(p->st);
   lean_inc(p->st);
   c->st = p->st;
   return c;

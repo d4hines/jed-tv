@@ -3,9 +3,9 @@ Signed bootloader updates, version 1
 
 Current source: direct G13 eMMC application-image updates, using the same
 signed Ethernet protocol as temporary network boot. No recovery Linux is
-involved. This new writer and its application mounts are NOT installed or
-hardware-tested. The installed older gate still supports only temporary
-network execution. See tools/bootloader/update/FLASHING.txt for provisioning.
+involved. The writer, read-only application mounts and fallback have passed
+physical RAM trials. See research/G13_APP_UPDATES.txt for current deployment
+state and tools/bootloader/update/FLASHING.txt for provisioning.
 
 Design
 ------
@@ -243,23 +243,22 @@ final-ACK interval, Ethernet DMA stops, the package is authenticated again,
 and the copied executable is hashed before entry. A returnable ARM/AAPCS
 payload gets its own 64 KiB stack and a versioned context; see
 Unsafe/CONTRACTS.txt. No upload or a rejected upload falls through to the
-ordinary OS boot. The installed older third-start escape skips Ethernet;
-the new local candidate offers the update window on that path too.
+ordinary OS boot. The application-update gate offers the update window on
+the third-start MBOOT-input escape too.
 
 Signatures establish authorization and image integrity, not that development
 code will return or preserve the resident loader. The current root of trust
 is still replaceable by privileged access to this unlocked TV.
 
-Next hardware integration
--------------------------
-1. Establish dedicated bank extents and backup/provisioning/recovery, without
-   overlapping live partitions, upgrade scratch usage or the boot journal.
-2. Add a bank-bounded FCIE backend and validate durability assumptions.
-3. Reuse the established Ethernet receiver for persistent-bank installation
-   and integrate boot selection and an authenticated previous-bank fallback.
-4. Exercise power interruption and actual storage durability. The successful
-   volatile-bank trial does not establish those properties. Do not overwrite
-   a running first stage as an ordinary bank update.
+Remaining hardware work
+-----------------------
+The fixed extents, bounded FCIE backend, shared Ethernet receiver and signed
+bank selection are implemented. Provisioning reserves upgrade read-only in
+Linux and disables its vendor OTA writer. See the physical evidence record.
+Actual power interruption and card durability remain untested. Successful
+readback does not prove those properties. Automatic app-health rollback is
+also absent: repair a broken signed app release with a higher signed version.
+Do not overwrite a running first stage as an ordinary application update.
 
 References (design guidance and exact crypto provenance):
 https://www.rfc-editor.org/rfc/rfc9124.html

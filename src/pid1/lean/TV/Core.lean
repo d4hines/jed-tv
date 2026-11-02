@@ -9,6 +9,20 @@ import TV.CoreProofs
 /-!
 # PID 1: the core
 
+**What is proved, and what it rests on.** PID 1 runs a Lean state machine with
+machine-checked guarantees about its decisions: launch authorization,
+PIN-protected policy changes, reserved-key routing, the order in which it
+requests stopping, rebooting and shutting down, which connections it grants,
+and the sandbox each process gets. A model of Linux's checks (`permits`)
+turns those sandboxes into guarantees about what each process can do. The
+theorems are about PID 1's outputs and that model; they hold on the TV if the
+native Linux and hardware adapters meet the contracts in section 11 and
+Linux behaves as modelled. For example, `powerAlwaysPowersOff` proves that
+Power produces a power-off request, not that the hardware turns off, and
+`noSubjectIsRoot` proves that no sandbox names user 0, not that the native
+launcher drops privileges correctly. Section 11 lists those contracts and
+the known limits.
+
 Everything PID 1 decides, and everything we claim about those decisions, is in
 this file. PID 1 is a pure state machine:
 
@@ -501,6 +515,74 @@ def bootPlan : List BootStep := [.loadModules, .lockKernel, .startTee, .startMed
 def before {α} [DecidableEq α] (x y : α) : List α → Bool
   | []      => false
   | z :: zs => if z = x then zs.contains y else if z = y then false else before x y zs
+
+/-! ### What Linux lets a process do
+
+A model of Linux's checks, given a process's sandbox. `permits c op` says
+whether a process confined by `c` can do `op`. It combines what the launcher
+sets up: the mounts (what exists in its view, and what is writable), the
+private `/dev`, the network namespace, the user and its capabilities, and
+the system-call filter. The theorems in section 9 are about `permits`, so
+they hold on the TV if the launcher builds `confine`'s row exactly and Linux
+enforces what this model says (section 11). -/
+
+/-- An IPv4 address. -/
+structure Address where
+  a : Nat
+  b : Nat
+  c : Nat
+  d : Nat
+  deriving DecidableEq
+
+/-- An address on the home network: the private and link-local ranges. -/
+def Address.home (x : Address) : Bool :=
+  x.a == 10 || (x.a == 172 && 16 ≤ x.b && x.b ≤ 31) || (x.a == 192 && x.b == 168) ||
+  (x.a == 169 && x.b == 254)
+
+/-- Who a signal or a trace could be aimed at. -/
+inductive Target where
+  | pid1
+  | subject (x : Subject)
+
+/-- Something a process can try to do. Paths are PID 1's real paths, not
+    where they appear inside the process's view. -/
+inductive Operation where
+  | read (path : String)
+  | write (path : String)
+  | openDevice (path : String) (writable : Bool)
+  /-- Open its own socket to this address (not one PID 1 hands it). -/
+  | connect (to : Address)
+  | exec (path : String)
+  | signal (to : Target)
+  | trace (to : Target)
+
+/-- `path` is `base` or inside it. -/
+def under (path base : String) : Bool :=
+  path == base || path.startsWith (base ++ "/")
+
+/-- The user a target runs as. -/
+def Target.uid (p : Policy) (d : Display) : Target → Nat
+  | .pid1      => 0
+  | .subject x => (confine p d x).uid
+
+/-- The model. A process sees only its mounts and can write only through
+    writable ones; opens only device nodes in its `/dev`; makes its own
+    connections only with `lan` (home addresses only) or as a network daemon;
+    runs only its listed programs; and, holding no CAP_KILL or
+    CAP_SYS_PTRACE and filtered from `ptrace`, signals only processes of its
+    own user and traces nothing. -/
+def permits (p : Policy) (d : Display) (c : Confinement) : Operation → Bool
+  | .read path  => c.mounts.any (fun m => match m.source with
+      | .outside base => under path base | _ => false)
+  | .write path => c.mounts.any (fun m => m.writable && match m.source with
+      | .outside base => under path base | _ => false)
+  | .openDevice path w => c.devices.any (fun v => under path v.path && (!w || v.writable))
+  | .connect to => (c.net.lan && to.home) || !c.net.sockets.isEmpty
+  | .exec path  => match c.exec with
+      | .programs paths => paths.contains path
+      | _               => false
+  | .signal to  => to.uid p d == c.uid
+  | .trace _    => false
 
 /-! ## 5. State -/
 
@@ -1174,6 +1256,55 @@ theorem pinNeverChangesWithoutPin :
         inputs = before ++ .choose (.changePin (run s before).policy.pin new) :: after := by
   induction_on_run
 
+/-! ### The controls work
+
+The theorems above say what cannot happen. A PID 1 that ignored every input
+would satisfy them, so these say the controls actually do something. -/
+
+/-- With the current PIN, the PIN changes to the new one. -/
+theorem correctPinChangesPin :
+    ∀ (s : State) (new : Pin), s.screen = .home →
+      (step s (.choose (.changePin s.policy.pin new))).1.policy.pin = new := by
+  cases_on_step
+
+/-- With the current PIN, an app is enabled. -/
+theorem correctPinEnables :
+    ∀ (s : State) (a : App), s.screen = .home →
+      (step s (.choose (.enable a s.policy.pin))).1.policy.enabled a = true := by
+  cases_on_step
+
+/-- Disabling needs no PIN, and it disables the app. -/
+theorem disableDisables :
+    ∀ (s : State) (a : App), s.screen = .home →
+      (step s (.choose (.disable a))).1.policy.enabled a = false := by
+  cases_on_step
+
+/-- An enabled app starts when launched, if no other app is still running
+    and the network is not changing. -/
+theorem enabledAppsStart :
+    ∀ (s : State) (a : App),
+      s.screen = .home → s.policy.enabled a = true → s.stopping = none → s.net.changing = false →
+      .start a (s.launch + 1) (effective s.policy a) ∈ (step s (.choose (.launch a))).2 := by
+  cases_on_step
+
+/-- With the current PIN, a capability is switched on. -/
+theorem correctPinGrants :
+    ∀ (s : State) (a : App) (c : Capability), s.screen = .home →
+      ((step s (.choose (.grant a c s.policy.pin))).1.policy.grants a).has c = true := by
+  cases_on_step
+
+/-- With no app running, switching a capability off switches it off. -/
+theorem revokeRevokes :
+    ∀ (s : State) (a : App) (c : Capability), s.screen = .home → s.stopping = none →
+      ((step s (.choose (.revoke a c))).1.policy.grants a).has c = false := by
+  cases_on_step
+
+/-- With the current PIN, an offline TV asks for the network to come up. -/
+theorem correctPinGoesOnline :
+    ∀ (s : State), s.screen = .home → s.policy.offline = true →
+      .network s.nextOp true ∈ (step s (.choose (.goOnline s.policy.pin))).2 := by
+  cases_on_step
+
 /-! ### The sandboxes -/
 
 /-- No process except PID 1 runs as root, in any user or group. -/
@@ -1228,6 +1359,14 @@ theorem nobodySeesAnotherAppsData :
       m ∈ (confine p d x).mounts → m.source = .outside (dataDir a) → x = .app a := by
   cases_on_rows
 
+/-- Apps cannot leave anything for the TEE helper: nothing an app can write is
+    visible to it. With `onlyTheTeeHelperSeesTheTee`, only PID 1 talks to it. -/
+theorem appsShareNothingWritableWithTheTeeHelper :
+    ∀ (p : Policy) (d : Display) (a : App) (m m' : Mount),
+      m ∈ (confine p d (.app a)).mounts → m.writable = true →
+      m' ∈ teeRow.mounts → m.source ≠ m'.source := by
+  cases_on_shared_mounts
+
 /-- Apps see no process list and nothing of `/sys`. -/
 theorem appsSeeNoProcessesOrKernelFiles :
     ∀ (p : Policy) (d : Display) (a : App) (m : Mount),
@@ -1248,6 +1387,66 @@ theorem onlyNetworkDaemonsHaveRawSockets :
     ∀ (p : Policy) (d : Display) (x : Subject),
       (confine p d x).net.sockets ≠ [] → x = .daemon .wifi ∨ x = .daemon .dhcp := by
   cases_on_rows
+
+/-! ### What Linux lets each process do
+
+These combine the sandboxes with the model of Linux above. -/
+
+/-- An app writes only inside its own data directory: not another app's,
+    not PID 1's settings, not the TEE's store, nothing else. -/
+theorem appsWriteOnlyTheirOwnData :
+    ∀ (p : Policy) (d : Display) (a : App) (path : String),
+      permits p d (confine p d (.app a)) (.write path) = true → under path (dataDir a) = true := by
+  writes_stay_in_own_data
+
+/-- No app can open the TEE or the eMMC. -/
+theorem appsCannotOpenTheTee :
+    ∀ (p : Policy) (d : Display) (a : App) (w : Bool),
+      permits p d (confine p d (.app a)) (.openDevice "/dev/tee0" w) = false ∧
+      permits p d (confine p d (.app a)) (.openDevice "/dev/teepriv0" w) = false ∧
+      permits p d (confine p d (.app a)) (.openDevice "/dev/mmcblk0rpmb" w) = false ∧
+      permits p d (confine p d (.app a)) (.openDevice "/dev/mmcblk0" w) = false := by
+  devices_by_table
+
+/-- An app's own connections reach only the home network, and only while
+    its `localNetwork` capability is in effect. Everything else it reaches,
+    PID 1 connected for it (`connectionsGoOnlyToListedHosts`). -/
+theorem appsConnectOnlyHome :
+    ∀ (p : Policy) (d : Display) (a : App) (to : Address),
+      permits p d (confine p d (.app a)) (.connect to) = true →
+      to.home = true ∧ (effective p a).localNetwork = true := by
+  connections_by_grants
+
+/-- While the TV is offline, no app can connect anywhere. -/
+theorem offlineAppsConnectNowhere :
+    ∀ (p : Policy) (d : Display) (a : App) (to : Address),
+      p.offline = true → permits p d (confine p d (.app a)) (.connect to) = false := by
+  connections_by_grants
+
+/-- No app can run another program. -/
+theorem appsRunNothing :
+    ∀ (p : Policy) (d : Display) (a : App) (path : String),
+      permits p d (confine p d (.app a)) (.exec path) = false := by
+  cases_on_permits
+
+/-- No process can signal PID 1 or any other process but its own. -/
+theorem processesSignalOnlyThemselves :
+    ∀ (p : Policy) (d : Display) (x : Subject) (to : Target),
+      permits p d (confine p d x) (.signal to) = true → to = .subject x := by
+  signals_by_users
+
+/-- No process can trace another. -/
+theorem nobodyTraces :
+    ∀ (p : Policy) (d : Display) (x : Subject) (to : Target),
+      permits p d (confine p d x) (.trace to) = false := by
+  cases_on_permits
+
+/-- The TEE helper writes only its own store. -/
+theorem teeHelperWritesOnlyItsStore :
+    ∀ (p : Policy) (d : Display) (path : String),
+      permits p d (confine p d (.daemon .tee)) (.write path) = true →
+      under path "/vendor/tvcertificate/tee" = true := by
+  tee_writes_by_table
 
 /-- The kernel is locked after every module is loaded and before any other
     process starts. -/
@@ -1632,6 +1831,28 @@ the TV only if native code does what section 10 says. In particular:
 - **The TEE helper's raw eMMC access.** `teeRow` holds `sysRawio` for one
   command that reads the eMMC's registers. With it, a compromised helper
   could send any eMMC command. Remove it if the TV starts without it.
+- **Known limits.**
+  - *Unreadable settings.* If storage cannot be read, PID 1 runs with no app
+    enabled and offline, but its PIN is 0000 and `step` still accepts policy
+    changes with it; only the menus, which offer no parental controls in that
+    state, prevent this. A future version should reject policy changes there.
+  - *No PIN attempt limit.* The theorems require the current PIN, not that
+    the person typing it is authorized; nothing limits tries, so all 10,000
+    PINs can be attempted.
+  - *Stopping is requested, not guaranteed.* `stuckAppsAreKilled` proves that
+    KILL is requested on the first tick after the deadline, assuming ticks
+    arrive. Native `signal` does not report failure and KILL is not retried;
+    if the app does not exit, the restart question (`stuckOnlyAfterKill`) is
+    the way out.
+  - *The network limits are partly enforced.* YouTube's connections go
+    through PID 1, but an app with `localNetwork` (Doom, YouTube for casting)
+    opens its own sockets, and the native home-network-only limit is not in
+    place yet.
+- **The trust chain.** The theorems about `permits` hold for the real TV if
+  three things are true: the launcher (unsafe native code) builds exactly
+  the sandbox `confine` describes; Linux enforces mounts, device nodes,
+  network namespaces, users, capabilities and system-call filters as
+  `permits` models them; and Linux itself is sound.
 - **The platform.** The Lean compiler and runtime, the Linux kernel, the
   vendor drivers, and the firmware below Linux.
 - **Transitional network.** Until `appRow`'s `lan` limit is enforced, an app

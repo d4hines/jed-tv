@@ -1,0 +1,147 @@
+G13 signed application updates: physical validation
+==================================================
+
+Target: 18ACC22D1C47, G13/AU13, slot a. Direct Ethernet is host
+192.168.77.1 -> TV 192.168.77.3. Screen 96550 remains the sole UART owner.
+Evidence root: assets/research/g13-app-update-tv/20261102T000048Z/.
+The owner authorized live troubleshooting; no intentional power cuts.
+
+Initial backups and candidate
+-----------------------------
+Full live readbacks, independently compared with device SHA256:
+  upgrade, 52428800 bytes:
+    9902d41858c3b8434ba8611797ac96358b548c80fa66b6d323b9e81c929f3893
+  boot_a, 55574528 bytes:
+    f10714cb2d5d908b1e030228513b88b072a996f99471ef6e67be1fc32abd3779
+  init_boot_a, 8388608 bytes:
+    0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b
+  MBOOT, 5242880 bytes:
+    a342fcdd62b2ce7121d977b9410d2c05aa51757bf7d26d6b445423e97122439b
+Config was archived separately. Do not publish that archive: it includes
+private network configuration. The private signing key stays on the host.
+Actual upgrade device: mmcblk0p45, start sector 3180544, length 102400 sectors.
+
+Candidate boot_a SHA256:
+  ff9fd1b5adbf091ca935d1690a0955260db5dbf020434340078c1582f1f6d9f3
+The Lean/ARM candidate is unchanged from the offline-validated build.
+ram-network/ records a successful RAM boot: forged signature rejected,
+signed temporary Lean program executed, native READY +19.11s.
+
+Storage reservation
+-------------------
+The vendor update_engine was running initially. app-storage-g13.rc replaces
+it with a disabled, one-shot no-op and runs app-storage-g13.sh at early-init.
+The script checks exact identity and partition geometry, stops update_engine
+and sets the upgrade partition read-only. Both native and Android entry
+templates import this reservation. The Linux block flag does not affect
+the bootloader's pre-Linux FCIE access. A normal reboot confirmed stopped
+update_engine and the retained read-only flag before any app update.
+Vendor fstab_late also names /data/vendor/upgrade; the live PID1 mount table
+has no mounted upgrade filesystem after reservation. Root can deliberately
+clear this software protection; it is not isolation against hostile root.
+
+Keep the original full upgrade backup. The partition previously held ext4
+OTA workspace, and installing app banks repurposes that workspace. Eight
+sectors of ext4 metadata below the first MiB differed between the initial
+backup and the first app trial. That interval includes the earlier normal
+boot before reservation; it is not an isolated app-writer comparison.
+The first trial preserved bank 1 and the region after the banks, excluding
+the intentionally advanced two-sector boot journal. Later comparisons must
+use the post-reservation snapshot, not attribute old ext4 changes to FCIE.
+
+Issues reproduced on the TV
+---------------------------
+The first signed app transfer completed in 45.756s and the bootloader chose
+bank 0 on its third-start MBOOT-input path. Independent full storage readback
+matched the signed header and all 10432512 payload bytes. Linux then failed
+to start the native launcher. No persistent bootloader prefix was installed
+on the strength of this incomplete trial.
+
+1. Newly configured loop devices returned EIO when reading both the upgrade
+   block device and a regular image file. A read-only dm-linear slice reads
+   the same partition contents and mounts EROFS successfully. The mount
+   helper now maps exactly 32767 sectors starting at 2049 + bank*32768,
+   relative to upgrade. It never exposes another partition or the journal.
+2. This platform rejected the EROFS context= mount override. The packer now
+   embeds security.selinux=shell_data_file on every inode using PAX xattrs.
+   This needs no host root permission. Do not use the first unlabeled image
+   as a release even though its bootloader signature is valid.
+3. Android mksh exited on failure from the function called inside a sourced
+   file, despite the caller's '. file || fallback'. Source only definitions,
+   then call dande_mount_apps with the error handler. A fault-injected dmctl
+   failure now reaches the handler and the shell survives.
+4. Axiom was absent from APP_BINARIES despite being in Home and g13-apps.
+   Restored it to the deployment/packaging list. The test image uses all nine
+   live app binaries, including the TV's newer Flight binary, not an older
+   local build. Original files remain in live-apps/.
+5. The launcher's private namespace used a nonrecursive bind of its chroot
+   root. This hid the authenticated /bin and /share submounts, so tvinit
+   silently executed the old writable copy. Matching file hashes did not
+   detect this because the test image deliberately contained the same apps.
+   start-android.sh now uses rbind. The readback tool requires EROFS in the
+   actual tvinit mount namespace, in addition to checking file hashes.
+
+The second signed image (version 2, bank 1) has the embedded SELinux labels.
+The 60.223-second transfer completed; full raw readback matched header and
+payload. Bank 0, the first MiB and the reserved tail were unchanged relative
+to the post-reservation snapshot. Software reached READY +19.77s, but the
+owner reported only backlight. Both the app frame and a SurfaceFlinger
+screenshot contained Home. GOP interrupts were zero and a display-service
+restart reproduced MI_OSD register-update timeouts. This is NOT a successful
+physical Home test. Keep the candidate RAM-only until the output failure
+and the mount-namespace check are resolved.
+
+The old installed loader's control reboot restored visible Home (owner
+confirmed) and GOP interrupts. The RAM test helper was missing the stock
+panel_pre_init / readKL / panel_post_init sequence: its readKL output said
+"Panle is not ready". boot-image-tv.py now retains that sequence before
+loading the candidate. This fixes the test setup, not the candidate binary.
+The helper also checks for the YMODEM sender before issuing TV commands.
+
+The default host ADB transport also became stale during the failed startup.
+A second host server on port 5038 confirmed working root ADB. Reconnecting
+the offline default transport restored it; this was not a bootloader or
+Ethernet failure. UART stayed interactive throughout.
+
+Corrected RAM trials and installation
+-------------------------------------
+ram-app-mount/ booted the unchanged candidate through N4/MBOOT-input fallback
+in 57.71s from bootKL, with native READY +19.28s. The owner confirmed visible
+Home. Independent full upgrade readback, all app/asset hashes, the actual
+tvinit /bin and /share EROFS mounts, mapping/partition read-only flags and
+stopped updater passed. SELinux labels on the mounted tree are shell_data_file.
+The other bank, unused image tail and reserved regions were unchanged.
+
+ram-network-panel/ then rejected a forged app package, executed the signed
+temporary Lean program and booted N1/Lean with visible Home (owner confirmed).
+READY was +19.27s; the full bootKL-to-READY interval was 92.64s, including
+network rejection/execution and full bank authentication. No candidate
+bootloader code change was needed for the display failure.
+
+The exact candidate was installed at 20261102T002000Z. Only boot_a bytes
+4096..135167 were written; full-partition SHA256 matches ff9fd1b5...f1f6d9f3
+above. The previous complete boot_a, both prefixes, result and exact public-key/
+source/build snapshot are retained in:
+  assets/research/g13-network-default/install-20261102T002000Z/
+The private signing key is not in that snapshot. Journal was not reseeded;
+the installer did not write other partitions or reboot. Two earlier attempts
+stopped at offline ADB identity checks, before writes; restarting the stale
+host ADB server restored access.
+
+Installed-image trial paused for source integration
+---------------------------------------------------
+installed-app-v3/ offered signed version 3 during an ordinary ADB restart,
+without a UART command or a RAM upload. The sender received acceptance after
+114.671s measured from before reboot. This includes the restart and receiver
+startup; it is not a payload-transfer-only timing. The latest UART output then
+ended in Power Down. No native READY or independent version-3 bank readback
+was recorded before the owner switched the task to commit/rebase and Lean
+proof checks. The host watcher was stopped; Screen remains the serial owner.
+The cause of standby and version-3 boot behavior are unresolved. Do not report
+this as a completed installed-image boot or a failed signature check.
+
+The signed version-2 RAM boots and their independent readbacks remain valid
+evidence. Installed version-3 readback, ordinary startup, downgrade rejection
+on the resident gate, and final app smoke checks remain unfinished. No claim
+of physical power-loss durability or automatic app-health rollback follows
+from successful flashing. No further TV changes were made for source rebase.

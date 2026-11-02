@@ -1,6 +1,24 @@
 # TCL 32Q3K workspace
 
-G13 signed network boot installed (2026-11-01): boot_a SHA256
+G13 signed app-update gate installed (2026-11-02 UTC): boot_a SHA256
+ff9fd1b5adbf091ca935d1690a0955260db5dbf020434340078c1582f1f6d9f3.
+The exact image passed RAM trials with signed temporary execution and signed
+app-bank selection on both Lean and MBOOT-input paths; the owner confirmed
+visible Home on both. Startup now uses read-only dm-linear/EROFS app mounts,
+embedded SELinux labels and recursive chroot binds. The upgrade partition is
+reserved read-only in Linux and vendor update_engine is disabled. MBOOT and
+other boot images were preserved; only the boot_a 128 KiB prefix was written,
+then full-partition hash checked. Exact backup/source/build snapshot:
+assets/research/g13-network-default/install-20261102T002000Z/.
+The subsequent ordinary Ethernet update accepted signed app version 3, but
+UART later ended in Power Down. No installed-image READY or independent v3
+readback was recorded. The owner deferred TV troubleshooting for rebase and
+proof checks. Do not claim ordinary startup is validated or resume hardware
+experiments without the owner's direction. Screen 96550 remains sole UART
+owner. Read research/G13_APP_UPDATES.txt for current evidence and open work.
+The new gate offers Ethernet on every start, including third-start fallback.
+
+Previous G13 signed network boot (2026-11-01): boot_a SHA256
 f10714cb2d5d908b1e030228513b88b072a996f99471ef6e67be1fc32abd3779.
 The v4 compressed Lean gate occupies the same 128 KiB kernel prefix; the rest
 of boot_a, MBOOT, other boot images and slot selection are preserved. Before

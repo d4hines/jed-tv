@@ -10,7 +10,9 @@ root=$base/root
 mount -o rprivate none /
 # The app launcher changes propagation on / in each child namespace. Make
 # this chroot root a mount point so that operation also works under Android.
-mount -o bind "$root" "$root"
+# Preserve the authenticated /bin and /share submounts in the launcher root.
+# A plain bind hides them and silently runs the old writable app tree.
+mount -o rbind "$root" "$root"
 # Keep parental controls outside the transient app root, available only to PID1.
 settings=/metadata/dande-tv/settings
 mkdir -p "$settings" "$root/settings/dande-tv"

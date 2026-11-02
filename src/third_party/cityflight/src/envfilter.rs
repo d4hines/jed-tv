@@ -16,8 +16,8 @@ use crate::jsb::*;
 use crate::model::*;
 use crate::world::{World, CELL, MAP_HALF, NC, R_BODY};
 use std::f64::consts::{FRAC_PI_2, PI};
-use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 pub static ENV_FILTER: AtomicU8 = AtomicU8::new(0);
 
@@ -441,6 +441,8 @@ pub struct Roll {
     /// Path samples (every `SAMPLE` frames) and the terminal set's continuation, for display.
     pub path: Vec<[f64; 3]>,
     pub tail: Vec<[f64; 3]>,
+    /// True clearance at each path sample on the map (so `truncate` can recompute `min_clear`).
+    pub clear: Vec<f64>,
     pub min_clear: f64,
     /// Time at which the verdict was reached (s).
     pub t: f64,
@@ -480,13 +482,22 @@ pub fn rollout(world: &World, p: &JsbPlant, esc: usize, max_frames: usize) -> Ro
 }
 
 /// `rollout` with an explicit law, stopping with `Outcome::Budget` at the wall-clock `deadline` if given.
-pub fn rollout_law(world: &World, p: &JsbPlant, mut law: Law, max_frames: usize, deadline: Option<std::time::Instant>) -> Roll {
+pub fn rollout_law(world: &World, p: &JsbPlant, law: Law, max_frames: usize, deadline: Option<std::time::Instant>) -> Roll {
+    rollout_capped(world, p, law, max_frames, deadline, None)
+}
+
+/// `rollout_law` whose frame limit can also shrink while it runs: `limit`, given the frames flown so far,
+/// is read before every frame. A limit that drops to `M` while the rollout is at or before frame `M` ends
+/// it exactly as `max_frames = M` would have; one that drops behind the rollout ends it at the next frame,
+/// and `truncate` cuts the result back.
+fn rollout_capped(world: &World, p: &JsbPlant, mut law: Law, max_frames: usize, deadline: Option<std::time::Instant>, limit: Option<&dyn Fn(usize) -> usize>) -> Roll {
     let esc = law.esc;
     let mut q = p.fork();
     law.capture(&q.obs);
-    let n_max = ((HORIZON / DT_JSB).round() as usize).min(max_frames);
+    let horizon = (horizon_s() / DT_JSB).round() as usize;
+    let mut n_max = horizon.min(max_frames);
     let mut hist: Vec<Hist> = Vec::with_capacity(n_max / SAMPLE + 2);
-    let mut r = Roll { esc, outcome: Outcome::Horizon, frames: 0, path: Vec::with_capacity(n_max / SAMPLE + 2), tail: Vec::new(), min_clear: f64::INFINITY, t: 0.0 };
+    let mut r = Roll { esc, outcome: Outcome::Horizon, frames: 0, path: Vec::with_capacity(n_max / SAMPLE + 2), tail: Vec::new(), clear: Vec::with_capacity(n_max / SAMPLE + 2), min_clear: f64::INFINITY, t: 0.0 };
     if esc == STREET && law.axis.is_nan() {
         return r;
     }
@@ -498,6 +509,7 @@ pub fn rollout_law(world: &World, p: &JsbPlant, mut law: Law, max_frames: usize,
             return Some(Outcome::Ok);
         }
         let c = world.airframe_clearance(&s, 50.0);
+        r.clear.push(c);
         r.min_clear = r.min_clear.min(c);
         if c <= MARGIN {
             return Some(Outcome::Hit);
@@ -516,7 +528,15 @@ pub fn rollout_law(world: &World, p: &JsbPlant, mut law: Law, max_frames: usize,
         return r;
     }
     let k_term = (T_TERM / DT_JSB).round() as usize;
-    for k in 1..=n_max {
+    let mut k = 0;
+    while k < n_max {
+        if let Some(limit) = limit {
+            n_max = n_max.min(limit(k));
+            if k >= n_max {
+                break;
+            }
+        }
+        k += 1;
         law.step(world, &mut q);
         r.frames = k;
         let t = k as f64 * DT_JSB;
@@ -539,7 +559,25 @@ pub fn rollout_law(world: &World, p: &JsbPlant, mut law: Law, max_frames: usize,
             }
         }
     }
-    r.outcome = if n_max < (HORIZON / DT_JSB).round() as usize { Outcome::Budget } else { Outcome::Horizon };
+    r.outcome = if n_max < horizon { Outcome::Budget } else { Outcome::Horizon };
+    r
+}
+
+/// `r` as `rollout_law` would have returned it with `max_frames` (at most the limit `r` ran under): `r`
+/// itself when its verdict came within `max_frames`, else `r` cut at that frame with `Outcome::Budget`:
+/// the path samples up to it, no tail, and the clearance minimum over those samples.
+pub fn truncate(mut r: Roll, max_frames: usize) -> Roll {
+    if r.frames <= max_frames {
+        return r;
+    }
+    let samples = max_frames / SAMPLE + 1;
+    r.path.truncate(samples);
+    r.clear.truncate(samples);
+    r.tail.clear();
+    r.min_clear = r.clear.iter().fold(f64::INFINITY, |m, &c| m.min(c));
+    r.frames = max_frames;
+    r.t = max_frames as f64 * DT_JSB;
+    r.outcome = Outcome::Budget;
     r
 }
 
@@ -802,6 +840,137 @@ pub static TIME_CAP_MS: std::sync::atomic::AtomicU32 = std::sync::atomic::Atomic
 pub const SHORT_RUN: u64 = 5;
 /// Don't start another rollout in a tick with fewer frames than this left.
 const MIN_ATTEMPT: usize = 640;
+/// Whether `Gate::tick` flies its candidate escapes on worker threads (`rollouts_ahead`) or one after
+/// another on its own thread. The decisions are the same either way; the serial path is kept to compare.
+// Off by default: in QEMU the parallel path was not faster (the first candidate's own
+// rollout dominates and it usually verifies), and it costs up to 3x the CPU. flighttv's
+// `flight.parallel=1` turns it on; the TV decides.
+pub static PARALLEL: AtomicBool = AtomicBool::new(false);
+/// TV port (semantic change, not the authors' design): the rollout horizon in
+/// milliseconds (the project's value is 16 s, `HORIZON`). A shorter horizon
+/// makes every rollout cheaper, but an escape that only settles later than
+/// this can no longer verify, so the filter refuses the pilot more often.
+pub static HORIZON_MS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(16_000);
+/// TV port (semantic change, not the authors' design): check the pilot every
+/// `k` control ticks instead of every tick. A check verifies the pilot's
+/// command held for `k` ticks followed by an escape; when it passes, exactly
+/// that command is flown for those `k` ticks (new stick input waits for the
+/// next check, at most `k` ticks). While an escape is being flown, the hand
+/// back to the pilot is also only tried every `k` ticks. The project's value
+/// is 1.
+pub static CHECK_EVERY: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+pub fn horizon_s() -> f64 {
+    HORIZON_MS.load(Ordering::Relaxed) as f64 / 1000.0
+}
+/// Worker threads for the parallel gate: the machine's cores, at most this many.
+// Two: the app's Lean policy allows four threads (src/pid1/lean/TV/Apps.lean, app 6), and the
+// display and simulation threads take two.
+const MAX_WORKERS: usize = 2;
+/// Worker stack size (bytes): the rollouts run the Lean plant, which gets the simulation thread's 16 MiB.
+const WORKER_STACK: usize = 16 << 20;
+
+/// Frames the `tried`-th escape of a tick may fly once `frames` of `budget` are spent: as many as it needs
+/// for the first one, what is left for the others; `None` ends the tick (fewer than `MIN_ATTEMPT` left).
+fn allowance(budget: usize, tried: usize, frames: usize) -> Option<usize> {
+    let left = budget.saturating_sub(frames);
+    if tried > 0 && left < MIN_ATTEMPT {
+        return None;
+    }
+    Some(if tried == 0 { usize::MAX } else { left })
+}
+
+/// The parallel gate: fly the tick's candidate escapes (`order`, the one tried first first) on up to
+/// `MAX_WORKERS` threads before the decision loop in `Gate::tick` asks for them. Each worker takes the next
+/// escape not yet started and flies it on its own clone of `cand`, under a frame limit that is always at
+/// least the budget the loop will give that escape, or 0 once it is known the loop will never ask for it.
+/// The limit has two parts. `caps` start at the most the loop could give: no limit for the first candidate,
+/// the whole remaining budget for the others; whenever a rollout finishes, `tighten` replays the loop's
+/// rule over the results so far, so the next escape whose result is still unknown gets its exact budget,
+/// and escapes the loop will never reach (an earlier one verified, or too little budget is left) get 0.
+/// And while the first candidate is still flying, the frames it has flown so far already bound what every
+/// later one can get (they come after it in the loop), so those stop early too. The loop then takes each
+/// rollout cut back to its budget (`truncate`), which is what flying it there would have produced. Returns
+/// one rollout per escape (`None` where dropped or never started) and the workers' CPU time (s). The one
+/// input this cannot reproduce is a wall-clock `deadline`: each rollout then stops at its first sample past
+/// it, and when that happens is not repeatable on either path.
+fn rollouts_ahead(world: &World, cand: &JsbPlant, order: &[usize], budget: usize, f0: usize, deadline: Option<std::time::Instant>) -> (Vec<Option<Roll>>, f64) {
+    let n = order.len();
+    let threads = std::thread::available_parallelism().map_or(1, |t| t.get()).min(MAX_WORKERS).min(n);
+    let plants: Vec<Mutex<Option<JsbPlant>>> = (0..n).map(|_| Mutex::new(Some(cand.fork()))).collect();
+    let caps: Vec<AtomicUsize> = (0..n).map(|i| AtomicUsize::new(allowance(budget, i.min(1), f0).unwrap_or(0))).collect();
+    let flown: Vec<AtomicUsize> = (0..n).map(|_| AtomicUsize::new(0)).collect();
+    let done: Mutex<Vec<Option<Roll>>> = Mutex::new((0..n).map(|_| None).collect());
+    let next = AtomicUsize::new(0);
+    let cpu = Mutex::new(0.0);
+    // Frames escape `i` may still be given now; 0 once the loop is known never to ask for it.
+    let limit = |i: usize| {
+        let cap = caps[i].load(Ordering::Relaxed);
+        if i == 0 {
+            return cap;
+        }
+        allowance(budget, 1, f0 + flown[0].load(Ordering::Relaxed)).map_or(0, |a| cap.min(a))
+    };
+    std::thread::scope(|sc| {
+        for _ in 0..threads {
+            let work = || {
+                let c0 = thread_cpu();
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    if i >= n {
+                        break;
+                    }
+                    if limit(i) == 0 {
+                        continue;
+                    }
+                    let Some(p) = plants[i].lock().unwrap().take() else { continue };
+                    let watch = |k: usize| {
+                        flown[i].store(k, Ordering::Relaxed);
+                        limit(i)
+                    };
+                    let r = rollout_capped(world, &p, Law::new(order[i]), usize::MAX, deadline, Some(&watch));
+                    drop(p);
+                    flown[i].store(r.frames, Ordering::Relaxed);
+                    let mut done = done.lock().unwrap();
+                    // A limit of 0 may have cut this rollout short; the loop will not ask for it anyway.
+                    if limit(i) > 0 {
+                        done[i] = Some(r);
+                    }
+                    tighten(budget, f0, &done, &caps);
+                }
+                *cpu.lock().unwrap() += thread_cpu() - c0;
+            };
+            // A worker that cannot be spawned leaves its escapes to the others, or to the loop itself.
+            let _ = std::thread::Builder::new().stack_size(WORKER_STACK).spawn_scoped(sc, work);
+        }
+    });
+    (done.into_inner().unwrap(), cpu.into_inner().unwrap())
+}
+
+/// Replay the decision loop's rule over the rollouts known so far (see `rollouts_ahead`): `done[i]` cut to
+/// its budget counts `min(frames, budget)` frames and verifies only if it did within that budget.
+fn tighten(budget: usize, f0: usize, done: &[Option<Roll>], caps: &[AtomicUsize]) {
+    let n = done.len();
+    let mut frames = f0;
+    let mut reach = n;
+    for i in 0..n {
+        let Some(max_frames) = allowance(budget, i, frames) else {
+            reach = i;
+            break;
+        };
+        let Some(r) = &done[i] else {
+            caps[i].fetch_min(max_frames, Ordering::Relaxed);
+            break;
+        };
+        frames += r.frames.min(max_frames);
+        if r.frames <= max_frames && r.ok() {
+            reach = i + 1;
+            break;
+        }
+    }
+    for c in &caps[reach..] {
+        c.store(0, Ordering::Relaxed);
+    }
+}
 
 /// Gatekeeper state. Invariant: `witness` is an escape that verified from the current plant state (when not
 /// committed), or `law` is a committed escape that verified from the state where it began; either way the
@@ -831,10 +1000,14 @@ pub struct Gate {
     pub runs: u64,
     pub short_runs: u64,
     pub run_len: u64,
-    /// Per-tick filter cost: thread CPU (ms), wall (ms), JSBSim frames.
+    /// Per-tick filter cost: CPU (ms, every thread that flew rollouts), wall (ms), JSBSim frames (as the
+    /// decision loop counts them).
     pub cpu_ms: Vec<f32>,
     pub wall_ms: Vec<f32>,
     pub frames: Vec<u32>,
+    /// The pilot command verified at the last check and the ticks it is still to be flown for (`CHECK_EVERY`).
+    pub held: Option<Cmd>,
+    pub held_left: u32,
 }
 
 impl Gate {
@@ -858,6 +1031,8 @@ impl Gate {
             cpu_ms: Vec::new(),
             wall_ms: Vec::new(),
             frames: Vec::new(),
+            held: None,
+            held_left: 0,
         };
         let mut best: Option<Roll> = None;
         for esc in 0..n_esc() {
@@ -885,32 +1060,73 @@ impl Gate {
     /// verifies, otherwise the committed (witness) escape. Returns whether the pilot was accepted.
     pub fn tick(&mut self, world: &World, plant: &mut JsbPlant, u_p: &Cmd, dt: f64, filter_on: bool) -> bool {
         let (c0, w0) = (thread_cpu(), std::time::Instant::now());
-        let mut cand = plant.fork();
-        if self.law.is_some() {
-            cand.bumpless_fbw();
+        let k = CHECK_EVERY.load(Ordering::Relaxed).max(1) as usize;
+        // Between checks (CHECK_EVERY > 1): fly the command the last check verified, or go on with the escape.
+        if filter_on && k > 1 {
+            if self.law.is_none() && self.held_left > 0 {
+                let held = self.held.unwrap_or(*u_p);
+                plant.advance(&held, dt);
+                self.held_left -= 1;
+                self.cpu_ms.push(0.0);
+                self.wall_ms.push((w0.elapsed().as_secs_f64() * 1e3) as f32);
+                self.frames.push(0);
+                return true;
+            }
+            if self.law.is_some() && self.run_len % k as u64 != 0 {
+                self.run_len += 1;
+                let law = self.law.as_mut().unwrap();
+                plant.lag -= dt;
+                while plant.lag < -1e-12 {
+                    law.step(world, plant);
+                    plant.lag += DT_JSB;
+                }
+                self.cpu_ms.push(0.0);
+                self.wall_ms.push((w0.elapsed().as_secs_f64() * 1e3) as f32);
+                self.frames.push(0);
+                return false;
+            }
         }
-        let f0 = (-cand.lag / DT_JSB).ceil().max(0.0) as usize;
-        cand.advance(u_p, dt);
+        self.held_left = 0;
+        // `one` is the plant one tick ahead under the pilot; `cand` is it `k` ticks ahead, where the escapes start.
+        let mut one = plant.fork();
+        if self.law.is_some() {
+            one.bumpless_fbw();
+        }
+        let f0 = (-one.lag / DT_JSB).ceil().max(0.0) as usize;
+        one.advance(u_p, dt);
+        let mut cand = one.fork();
+        for _ in 1..k {
+            cand.advance(u_p, dt);
+        }
         if !filter_on {
-            *plant = cand;
+            *plant = one;
             self.law = None;
             self.witness = None;
             return true;
         }
         let cap = TIME_CAP_MS.load(Ordering::Relaxed);
         let deadline = (cap > 0).then(|| w0 + std::time::Duration::from_millis(cap as u64));
-        let mut frames = f0;
-        let mut verified: Option<Roll> = None;
+        let budget = BUDGET.load(Ordering::Relaxed);
         let n = n_esc();
         // Flying the pilot: `last` first. Committed: continue the round robin from the previous tick.
         let mut esc = if self.law.is_none() { self.last } else { self.rr };
+        // Parallel: the escapes the loop below may ask for, in its order, flown ahead on worker threads.
+        let (mut ahead, cpu_workers) = if PARALLEL.load(Ordering::Relaxed) {
+            let order: Vec<usize> = (0..n).map(|i| (esc + i) % n).collect();
+            rollouts_ahead(world, &cand, &order, budget, f0, deadline)
+        } else {
+            (Vec::new(), 0.0)
+        };
+        let mut frames = f0;
+        let mut verified: Option<Roll> = None;
         let mut tried = 0;
         loop {
-            let left = BUDGET.load(Ordering::Relaxed).saturating_sub(frames);
-            if tried > 0 && left < MIN_ATTEMPT {
-                break;
-            }
-            let r = rollout_law(world, &cand, Law::new(esc), if tried == 0 { usize::MAX } else { left }, deadline);
+            let Some(max_frames) = allowance(budget, tried, frames) else { break };
+            // A rollout flown ahead, cut back to this budget, is what flying it here would give.
+            let r = match ahead.get_mut(tried).and_then(Option::take) {
+                Some(r) => truncate(r, max_frames),
+                None => rollout_law(world, &cand, Law::new(esc), max_frames, deadline),
+            };
             frames += r.frames;
             tried += 1;
             self.outcomes[esc][r.outcome as usize] += 1;
@@ -930,7 +1146,11 @@ impl Gate {
             if self.law.is_some() && self.run_len <= SHORT_RUN {
                 self.short_runs += 1;
             }
-            *plant = cand;
+            *plant = one;
+            if k > 1 {
+                self.held = Some(*u_p);
+                self.held_left = (k - 1) as u32;
+            }
             self.last = r.esc;
             self.witness = Some(r.esc);
             self.witness_path = self.shown.clone();
@@ -963,7 +1183,7 @@ impl Gate {
             false
         };
         self.first_accept.get_or_insert(accept);
-        self.cpu_ms.push(((thread_cpu() - c0) * 1e3) as f32);
+        self.cpu_ms.push(((thread_cpu() - c0 + cpu_workers) * 1e3) as f32);
         self.wall_ms.push((w0.elapsed().as_secs_f64() * 1e3) as f32);
         self.frames.push(frames as u32);
         accept

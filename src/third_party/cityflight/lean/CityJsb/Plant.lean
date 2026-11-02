@@ -1,8 +1,13 @@
 import JsbExact.Model
 import CityJsb.Template
+import CityJsb.F.Plant
 
 /-! `JsbExact` as a plant for the city demo: build an in-flight state at the origin (latitude and longitude 0)
-and step it one JSBSim frame (1/128 s) at a time, reporting what the demo needs in SI units. -/
+and step it one JSBSim frame (1/128 s) at a time, reporting what the demo needs in SI units.
+
+The exported entry points at the end run the `Float` model (`CityJsb/F/Plant.lean`, `JsbExact/F/*`), whose
+results are bit-identical to the generic model here (checked by `lake exe jsbdiff`) and which allocates no
+boxed numbers. The generic `init`, `obs` and `step` stay for that test. -/
 
 namespace CityJsb
 open JsbExact
@@ -54,12 +59,18 @@ def obs (s : State Float) (d : Diag Float) : FloatArray :=
      d.euler.x, d.euler.y, d.euler.z, d.pqr.x, d.pqr.y, d.pqr.z, d.alpha, d.beta, nz, d.agl * ft,
      d.qbar * 47.880258, s.rpm]⟩
 
-@[export cityjsb_init]
-def initE (hM v gam psi phi alpha : Float) : State Float := init hM v gam psi phi alpha
-
-@[export cityjsb_step_lean]
-def stepE (s : State Float) (elev ail rud thr : Float) : State Float × FloatArray :=
+/-- One frame of the generic model with the demo's fixed mixture and no brakes, and its observation (what the
+exported step did before the `Float` model; kept for `jsbdiff`'s timing). -/
+def stepObs (s : State Float) (elev ail rud thr : Float) : State Float × FloatArray :=
   let (s', d) := step s { elev, ail, rud, thr, mix := 0.9, brkL := 0, brkR := 0 }
   (s', obs s' d)
+
+-- The C ABI (c/cityjsb_abi.c) only sees `lean_object*` for the state, so its type here is the `Float` model's.
+@[export cityjsb_init]
+def initE (hM v gam psi phi alpha : Float) : JsbExact.F.State := F.init hM v gam psi phi alpha
+
+@[export cityjsb_step_lean]
+def stepE (s : JsbExact.F.State) (elev ail rud thr : Float) : JsbExact.F.State × FloatArray :=
+  F.stepE s elev ail rud thr
 
 end CityJsb

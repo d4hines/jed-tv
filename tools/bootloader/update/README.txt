@@ -2,8 +2,8 @@ Signed updates and network boot
 ===============================
 Design, wire format and proof limits: src/bootloader/Update/README.txt.
 Physical G13 evidence and installed image: research/G13_SIGNED_NETWORK_BOOT.txt.
-New direct application-flash candidate and deployment: FLASHING.txt.
-The new writer is local only; it has not been installed on the TV.
+Direct application flashing and provisioning: FLASHING.txt.
+Current physical validation/deployment state: research/G13_APP_UPDATES.txt.
 
 Fast network development on the installed G13
 ---------------------------------------------
@@ -27,11 +27,10 @@ in src/bootloader/Unsafe/CONTRACTS.txt. A non-returning payload can take over;
 a returning payload must preserve resident code, RAM and CPU state. Repeated
 signed versions are allowed for this volatile operation.
 
-The existing third-start MBOOT-input escape deliberately skips Ethernet.
-If that start is due, let it reach Home and run the command on the next start.
-Without --reboot the tool waits for a manually initiated startup. A UART byte
-also ends the receive window. That describes the installed older gate: the
-new local candidate offers all starts and can flash signed application images.
+The application-update gate offers Ethernet on every counted start, including
+the third-start MBOOT-input escape. The older temporary-only gate skipped that
+start. Without --reboot the tool waits for a manually initiated startup.
+A UART byte also ends the receive window.
 
 The private deployment key is ignored by Git and stays on the host. Retain a
 backup if you need to sign future payloads for this installed verifier. Test
@@ -50,7 +49,9 @@ Build/check a network image locally with an explicit public key:
 These commands do not access the TV. Network artifacts are under
 assets/build/leanboot-network/. install-network.py is an exact-state installer
 for this experiment: it requires matching partition hashes, audited artifacts
-and a successful same-image RAM boot. Its --apply writes the boot_a prefix.
+and successful same-image RAM network execution, app installation and mounted
+image readback. Supply --ram-trial and --app-trial; --mount-trial can name a
+later cold RAM trial after startup fixes. Its --apply writes the boot_a prefix.
 verify-network-tv.py performs three real restarts; it is not a status query.
 
 Local persistent-update model

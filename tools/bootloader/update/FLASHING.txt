@@ -1,8 +1,9 @@
 Direct signed application updates on G13
 ========================================
 
-Status: implemented locally, not installed or physically validated. The
-installed older gate still accepts only temporary executable packages.
+Status: direct writes, signed selection and app mounts have passed physical
+RAM trials. Current installed revision and final results are recorded in
+research/G13_APP_UPDATES.txt; do not infer deployment from a local build.
 No recovery Linux is used by this implementation. It writes eMMC directly
 from compiled Lean, using the existing bounded FCIE register adapter.
 
@@ -42,13 +43,22 @@ Do not treat upgrade as free space: it is also vendor OTA workspace. Before
 installing this candidate, capture a fresh full upgrade backup, verify its
 50 MiB size/start sector and retain its hash. Reserve these extents exclusively
 for app images and disable/confine every vendor OTA/postinstall writer that
-could reuse upgrade. That on-device provisioning has not been performed.
+could reuse upgrade. The exact G13 provisioning is implemented by
+app-storage-g13.rc/.sh: disable update_engine and set the checked upgrade
+block device read-only at early-init, including the Android entry template.
+This protects against ordinary Linux writers, not hostile root.
 
 Build the normal G13 apps as usual; build-apps.py uses the recorded paths in
 assets/build/native-app-g13/build.json and the current deployment app list.
 It does not include test executables found elsewhere in the Nix output.
 The recorded G13 kernel is 5.15.167 with EROFS and LZ4 enabled. The packer
 rejects incompatible features beyond lz4_0padding and verifies the filesystem.
+The packer embeds shell_data_file SELinux labels through PAX xattrs. G13
+rejected context= mount overrides and newly configured loop devices failed
+reads, so startup uses a read-only dm-linear slice instead. A recursive chroot
+bind preserves the /bin and /share submounts. verify-apps-tv.py checks those
+actual launcher mounts, the complete signed image, and all file hashes;
+matching old-tree file hashes alone is not sufficient evidence of deployment.
 
 Local build/check commands (no device access):
   nix develop .#bootloader
@@ -66,13 +76,24 @@ Local build/check commands (no device access):
 On-device deployment remains a separate operation: stage the mount helper
 using tools/native-app/g13-boot.py appimages, then test the exact candidate
 through the existing RAM boot workflow before replacing the resident boot
-prefix. Stage0/mboot and the existing recovery artifacts must be preserved.
-install-network.py intentionally retains its old exact-state/RAM-trial pins;
-do not bypass them or present that historical installer as ready for this
-new candidate. Live state, reservation and same-image trial must be checked.
+prefix. MBOOT and the existing recovery artifacts must be preserved.
+boot-image-tv.py retains stock panel_pre_init/readKL/panel_post_init: omitting
+the panel steps can reach READY and produce a correct screenshot with a blank
+physical screen. Always confirm physical output for a new boot path.
+
+Read back a completed trial (BASELINE is a post-reservation upgrade snapshot):
+  python3 tools/bootloader/update/verify-apps-tv.py --baseline BASELINE \
+    --apps SIGNED_APP_DIRECTORY --trial RAM_BOOT_DIRECTORY
+install-network.py requires --ram-trial for signed temporary execution,
+--app-trial for the signed app transfer, and optionally --mount-trial for a
+later cold boot/readback after startup fixes. It checks exact live partition
+hashes, reservation, key, source and audit results. --apply backs up boot_a,
+writes only its 128 KiB kernel prefix and checks the full partition hash,
+restoring the previous prefix on mismatch. It does not reboot or reseed the
+journal. Its exact predecessor pin deliberately prevents an arbitrary upgrade.
 
 After that deployment, an ordinary update needs only Ethernet and a restart:
-  python3 tools/bootloader/update/build-apps.py --key assets/private/network-boot/signing.pem --version 2
+  python3 tools/bootloader/update/build-apps.py --key assets/private/network-boot/signing.pem --version NEXT_VERSION
   python3 tools/bootloader/update/send.py assets/build/leanboot-apps/apps.lbu --host 192.168.77.3 --wait 60
 Start the sender before restarting the TV. No UART command or running ADB is
 required by the transfer. UART remains useful for diagnosis. The final Seal
@@ -84,6 +105,9 @@ app-health rollback, and the third-start bootloader escape does not select
 an older app bank. If a signed release is broken, sign known-good app contents
 with a higher release number and send them on the next full restart. The
 update receiver does not depend on the broken apps starting successfully.
+NEXT_VERSION must exceed both authenticated stored versions. Retain the
+private signing key. Boot currently rereads and hashes both full app images;
+the physical timing record includes this substantial startup cost.
 
 Proofs and limits
 -----------------

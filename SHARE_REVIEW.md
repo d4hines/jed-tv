@@ -15,12 +15,16 @@ that distribution rules in every jurisdiction are identical.
 
 ## What this copy contains
 
-Source: local `internal/main` at `85528fe` (full ID in the manifest). The
-first pass could not refresh GitHub over SSH; no newer remote state is claimed.
-The second pass restores **97 source files**, retaining **2,081 of 2,086**
-original files (99.8%). All **576 Lean files** are retained, alongside **337 original research
-files**, and the original AGENTS.md archived as
-`research/archive/INTERNAL_AGENT_NOTES.txt`. The current AGENTS.md remains
+Source: local `internal/main` at `120f0b6` (full ID in the manifest).
+The latest SSH refresh failed authentication; no newer remote state is claimed.
+An incremental update imports 44 changed original files since `85528fe`,
+including the Linux confinement model and proofs, City Flight performance
+work, and G13 signed-app deployment fixes and research. Existing exclusions,
+four content redactions/edits, and license notices are preserved.
+This copy retains **2,095 of 2,100** original files, including all
+**585 Lean files** and **338 original research files**, with the original
+AGENTS.md archived as `research/archive/INTERNAL_AGENT_NOTES.txt`.
+The current AGENTS.md remains
 short repository guidance. Historical commands and hardware state are not
 instructions to perform new hardware operations.
 

@@ -5,3 +5,4 @@ import /system_ext/etc/init
 import /vendor/etc/init
 import /odm/etc/init
 import /product/etc/init
+import /metadata/dande-tv/app-storage.rc

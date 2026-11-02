@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import time
@@ -23,7 +24,13 @@ def main():
     parser.add_argument('--build', type=Path, default=t.ROOT/'assets/build/leanboot')
     parser.add_argument('--refresh-prefix', action='store_true',
                         help='refresh code/header in RAM through compressed UART transfer before checking the whole image')
+    parser.add_argument('--timeout', type=float, default=55,
+                        help='bounded wait for READY, including any signed update (seconds)')
     args = parser.parse_args()
+    if not 1 <= args.timeout <= 900:
+        parser.error('--timeout must be between 1 and 900 seconds')
+    if args.refresh_prefix and shutil.which('sb') is None:
+        parser.error('--refresh-prefix requires sb; use nix develop .#bootloader')
     args.out.mkdir(parents=True, exist_ok=True)
     t.OUT = args.out
     build = args.build
@@ -35,7 +42,14 @@ def main():
     assert patch == struct.pack('<I', 0xe3a03101)  # MOV r3,#0x40000000, emitted by the DSL.
     with t.Session() as s:
         s.guard()
-        print(s.ask('readKL', timeout=60), flush=True)
+        # Catching the early prompt skips the normal panel preparation. Linux
+        # can submit frames and report READY with no physical scanout if we
+        # omit it. Reproduce the stock pre-init / readKL / post-init order.
+        print(s.ask('panel_pre_init', timeout=30), flush=True)
+        loaded = s.ask('readKL', timeout=60)
+        print(loaded, flush=True)
+        assert 'Panle is not ready' not in loaded, 'Stock panel initialization failed'
+        print(s.ask('panel_post_init', timeout=30), flush=True)
         # The source is disjoint from the destination; MBOOT rejects overlap.
         descriptors = struct.unpack('<16I', s.read(0x297f1000, 64))
         assert all(value & 0xfff00003 == (0x40000000 + i*0x100000) | 2
@@ -55,7 +69,7 @@ def main():
         began = time.monotonic()
         subprocess.run([t.SCREEN, '-S', t.SESSION, '-p', '0', '-X', 'stuff', 'bootKL\r'], check=True)
         data = b''
-        while time.monotonic()-began < 55:
+        while time.monotonic()-began < args.timeout:
             with t.LOG.open('rb') as f:
                 f.seek(start); data = f.read()
             if b'DANDE_BOOT' in data and b'READY' in data: break

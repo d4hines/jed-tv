@@ -1,8 +1,22 @@
 G13 signed network update / boot experiments
 ===========================================
 
-Installed revision, 2026-11-01
------------------------------
+Current application-update revision, 2026-11-02 UTC
+-------------------------------------------------
+boot_a SHA256:
+  ff9fd1b5adbf091ca935d1690a0955260db5dbf020434340078c1582f1f6d9f3
+This revision adds direct signed application updates in two upgrade banks,
+authenticated bank selection and Ethernet on the third-start fallback too.
+Both RAM boot paths reached owner-confirmed visible Home from the read-only
+signed image. Signed temporary execution and forged rejection also passed.
+Installation wrote only the 128 KiB boot_a prefix and verified the full image.
+Backup, readback and exact source/build snapshot:
+  assets/research/g13-network-default/install-20261102T002000Z/
+Current ordinary-start/update validation and limits:
+  research/G13_APP_UPDATES.txt
+
+Previous installed revision, 2026-11-01
+--------------------------------------
 boot_a SHA256:
   f10714cb2d5d908b1e030228513b88b072a996f99471ef6e67be1fc32abd3779
 The exact revision passed a RAM boot with a full 1 MiB signed example and
@@ -42,6 +56,9 @@ Final-state hashes and service/network observations: final-state.json.
 
 Network boot implementation
 ---------------------------
+The following describes the previous temporary-only revision. The current
+application-update gate retains its signed execution protocol and also opens
+Ethernet on the third-start fallback; see the current record above.
 Target: this G13 / AU13 / serial 18ACC22D1C47, slot a. The network gate opens
 Ethernet at 192.168.77.3:7533 before Lean OS preparation. It uses the update
 protocol unchanged: canonical LBOOTUP1 manifest, Ed25519 signature over the

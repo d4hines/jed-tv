@@ -187,8 +187,35 @@ def parallel():
 
 def appimages():
     """Consume bootloader-authenticated application banks on the next boot."""
-    backup = install_config([('apps-g13.sh', 'apps.sh'), ('boot-g13.sh', 'boot.sh')], 'app-images')
-    print(f'Installed signed app-image startup support. Backup: {backup}. No flash or reboot.')
+    backup = install_config([('app-storage-g13.rc', 'app-storage.rc'),
+                             ('app-storage-g13.sh', 'app-storage.sh'),
+                             ('apps-g13.sh', 'apps.sh'), ('boot-g13.sh', 'boot.sh')], 'app-images',
+                            [('start-android.sh', 'start.sh')])
+    manifest = json.loads(shell(f'cat {CONFIG}/manifest.json'))
+    # Keep the selected OS and existing imports; protect the reserved partition
+    # even if a later native-startup failure selects the Android template.
+    names = ['android.rc', 'native-entry.rc', 'entry.rc']
+    for name in names:
+        content = shell(f'cat {CONFIG}/{name}')
+        line = f'import {CONFIG}/app-storage.rc'
+        if line not in content.splitlines(): content = content.rstrip() + '\n' + line + '\n'
+        local = backup / ('reserved-' + name)
+        local.write_text(content)
+        adb('push', local, f'{CONFIG}/{name}.next')
+        shell(f'chown 0:0 {CONFIG}/{name}.next; chmod 600 {CONFIG}/{name}.next; restorecon {CONFIG}/{name}.next')
+        if read_hash(f'{CONFIG}/{name}.next') != digest(local):
+            raise RuntimeError(f'Reservation import readback failed: {name}')
+        manifest['config_sha256'][name] = digest(local)
+    shell(f'/system/bin/sh {CONFIG}/app-storage.sh')
+    for name in names: shell(f'sync; mv {CONFIG}/{name}.next {CONFIG}/{name}')
+    updated = backup / 'reserved-manifest.json'
+    updated.write_text(json.dumps(manifest, indent=2) + '\n')
+    adb('push', updated, f'{CONFIG}/manifest.json.next')
+    shell(f'chown 0:0 {CONFIG}/manifest.json.next; chmod 600 {CONFIG}/manifest.json.next; '
+          f'restorecon {CONFIG}/manifest.json.next; sync; '
+          f'mv {CONFIG}/manifest.json.next {CONFIG}/manifest.json; sync')
+    verify(manifest)
+    print(f'Installed signed app-image startup and reserved upgrade read-only in Linux. Backup: {backup}. No flash or reboot.')
 
 
 def main():

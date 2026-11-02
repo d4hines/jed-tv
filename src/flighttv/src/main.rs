@@ -8,6 +8,15 @@
 //! Options (program arguments or kernel command line):
 //!   flight.escapes=N   escapes the gate filter uses (default 6, all of them, as the project does)
 //!   flight.scenario=N  first scenario, 1-5
+//!   flight.budget=N    the gate filter's frame budget per tick (JSBSim frames; default 2200, the project's)
+//!   flight.parallel=1  fly the gate filter's candidate escapes on worker threads (same decisions; default off)
+//!   flight.check_every=N  check the pilot every N ticks, flying the verified command in between
+//!                      (default 4 on the TV; the project checks every tick). Changes the filter's meaning.
+//!   flight.horizon=S   rollout horizon in seconds (default 16, the project's). Shorter is cheaper but
+//!                      escapes that settle later than S no longer verify. Changes the filter's meaning.
+//!   flight.selftest=1  fly a scripted minute twice from the same start, with the gate's rollouts serial
+//!                      and then parallel, compare tick by tick, log PASS or FAIL and exit (what
+//!                      `FLIGHT_SELFTEST=1 nix run .#pid1 -- --check` runs)
 //!
 //! On a non-Linux host, `cargo run -p flighttv -- out.ppm [ticks] [nohud]` flies
 //! the point-mass model for some ticks and writes one frame (a layout preview;
@@ -106,7 +115,8 @@ mod tv {
     fn simulate(world: &'static World, controls: Arc<Mutex<Controls>>, report: Arc<Mutex<Report>>, escapes: u8, scenario: usize) {
         let t0 = sys::monotonic();
         let mut flight = Flight::new(world, scenario);
-        log(format!("JSBSim plant and gate filter ready in {:.2} s ({} escapes); scenario {}", (sys::monotonic() - t0).as_secs_f64(), escapes, SCENARIOS[scenario]));
+        log(format!("JSBSim plant and gate filter ready in {:.2} s ({} escapes, budget {} frames); scenario {}",
+                    (sys::monotonic() - t0).as_secs_f64(), escapes, cityflight::envfilter::BUDGET.load(Ordering::Relaxed), SCENARIOS[scenario]));
         let mut tick_ms = 0.0;
         let mut sim_secs = 0.0;
         let mut window = sys::monotonic();
@@ -153,6 +163,102 @@ mod tv {
         }
     }
 
+    /// What one control tick left behind, as bits: the aircraft state and the gate filter's witness escape,
+    /// whether it is flying an escape, its paths and its counters. Timings are left out.
+    #[derive(PartialEq)]
+    struct Record {
+        state: [u64; 10],
+        witness: Option<usize>,
+        flying: bool,
+        witness_path: Vec<[u64; 3]>,
+        shown: Vec<[u64; 3]>,
+        shown_ok: bool,
+        last: usize,
+        rr: usize,
+        frames: u32,
+        outcomes: [[u64; 4]; cityflight::envfilter::N_ESC],
+        runs: [u64; 4],
+        crashed: bool,
+    }
+
+    impl Record {
+        fn of(f: &Flight) -> Record {
+            let g = f.sim.env_gate.as_ref().expect("the gate filter");
+            let bits = |p: &[f64; 3]| p.map(f64::to_bits);
+            Record {
+                state: f.sim.s.map(f64::to_bits), witness: g.witness, flying: g.law.is_some(),
+                witness_path: g.witness_path.iter().map(bits).collect(), shown: g.shown.iter().map(bits).collect(), shown_ok: g.shown_ok,
+                last: g.last, rr: g.rr, frames: g.frames.last().copied().unwrap_or(0), outcomes: g.outcomes,
+                runs: [g.runs, g.short_runs, g.run_len, g.blind_ticks], crashed: f.sim.crashed,
+            }
+        }
+
+        /// The fields that differ, with their values where short.
+        fn diff(&self, o: &Record) -> String {
+            let mut d = Vec::new();
+            if self.state != o.state { d.push(format!("state {:x?} vs {:x?}", self.state, o.state)); }
+            if self.witness != o.witness { d.push(format!("witness {:?} vs {:?}", self.witness, o.witness)); }
+            if self.flying != o.flying { d.push(format!("flying escape {} vs {}", self.flying, o.flying)); }
+            if self.witness_path != o.witness_path { d.push(format!("witness path ({} vs {} points)", self.witness_path.len(), o.witness_path.len())); }
+            if self.shown != o.shown { d.push(format!("shown path ({} vs {} points)", self.shown.len(), o.shown.len())); }
+            if self.shown_ok != o.shown_ok { d.push(format!("shown ok {} vs {}", self.shown_ok, o.shown_ok)); }
+            if self.last != o.last { d.push(format!("last {} vs {}", self.last, o.last)); }
+            if self.rr != o.rr { d.push(format!("rr {} vs {}", self.rr, o.rr)); }
+            if self.frames != o.frames { d.push(format!("frames {} vs {}", self.frames, o.frames)); }
+            if self.outcomes != o.outcomes { d.push(format!("outcomes {:?} vs {:?}", self.outcomes, o.outcomes)); }
+            if self.runs != o.runs { d.push(format!("runs/short/len/blind {:?} vs {:?}", self.runs, o.runs)); }
+            if self.crashed != o.crashed { d.push(format!("crashed {} vs {}", self.crashed, o.crashed)); }
+            d.join("; ")
+        }
+    }
+
+    /// `flight.selftest=1`: fly the same scripted ticks twice from the same scenario start, with the gate's
+    /// rollouts serial and then parallel, compare what each tick left behind, log the verdict and exit.
+    fn selftest(world: &'static World, scenario: usize) -> ! {
+        use cityflight::envfilter::PARALLEL;
+        const TICKS: usize = 60;
+        // The stick, tick by tick: roll right for ticks 10-30, pitch up for 35-45, neutral otherwise.
+        let stick = |k: usize| ((35..=45).contains(&k) as i32 as f64, (10..=30).contains(&k) as i32 as f64);
+        let run = |parallel: bool| {
+            PARALLEL.store(parallel, Ordering::Relaxed);
+            let mut flight = Flight::new(world, scenario);
+            let t0 = sys::monotonic();
+            let mut records = Vec::with_capacity(TICKS);
+            // Per tick: how many escapes the gate's loop flew, and the tick's wall and filter CPU time (ms).
+            let mut cost: Vec<(u64, f64, f32)> = Vec::with_capacity(TICKS);
+            for k in 0..TICKS {
+                let (pitch, roll) = stick(k);
+                flight.steer(pitch, roll, DT_F);
+                let t = sys::monotonic();
+                flight.tick();
+                let ms = (sys::monotonic() - t).as_secs_f64() * 1e3;
+                let g = flight.sim.env_gate.as_ref().expect("the gate filter");
+                let flown: u64 = g.outcomes.iter().flatten().sum::<u64>() - cost.iter().map(|c| c.0).sum::<u64>();
+                cost.push((flown, ms, g.cpu_ms.last().copied().unwrap_or(0.0)));
+                records.push(Record::of(&flight));
+            }
+            let ms = (sys::monotonic() - t0).as_secs_f64() * 1e3 / TICKS as f64;
+            let mean = |pick: &dyn Fn(&(u64, f64, f32)) -> bool| {
+                let picked: Vec<&(u64, f64, f32)> = cost.iter().filter(|c| pick(c)).collect();
+                (picked.len(), picked.iter().map(|c| c.1).sum::<f64>() / picked.len().max(1) as f64)
+            };
+            let (n1, ms1) = mean(&|c| c.0 == 1);
+            let (n2, ms2) = mean(&|c| c.0 > 1);
+            let cpu = cost.iter().map(|c| c.2 as f64).sum::<f64>() / TICKS as f64;
+            let frames = flight.sim.env_gate.as_ref().map_or(0.0, |g| g.frames.iter().map(|&f| f as f64).sum::<f64>() / g.frames.len().max(1) as f64);
+            log(format!("selftest: {} rollouts, {TICKS} ticks, {ms:.0} ms/tick: {n1} ticks flew one escape ({ms1:.0} ms), {n2} flew more ({ms2:.0} ms); {frames:.0} frames and {cpu:.0} ms CPU per tick",
+                        if parallel { "parallel" } else { "serial" }));
+            (records, ms)
+        };
+        let (serial, serial_ms) = run(false);
+        let (parallel, parallel_ms) = run(true);
+        match serial.iter().zip(&parallel).position(|(a, b)| a != b) {
+            None => log(format!("selftest PASS parallel == serial over {TICKS} ticks (serial {serial_ms:.0} ms/tick, parallel {parallel_ms:.0} ms/tick)")),
+            Some(k) => log(format!("selftest FAIL at tick {k}: {}", serial[k].diff(&parallel[k]))),
+        }
+        sys::power_off(0);
+    }
+
     pub fn main() {
         std::panic::set_hook(Box::new(|info| {
             eprintln!("flighttv: PANIC: {info}");
@@ -174,6 +280,15 @@ mod tv {
         cityflight::envfilter::TIME_CAP_MS.store(0, Ordering::Relaxed);
         let escapes = sys::cmdline_arg("flight.escapes").and_then(|s| s.parse::<u8>().ok()).unwrap_or(6).clamp(1, 6);
         cityflight::envfilter::N_USED.store(escapes, Ordering::Relaxed);
+        let budget = sys::cmdline_arg("flight.budget").and_then(|s| s.parse::<usize>().ok()).unwrap_or(cityflight::envfilter::BUDGET_FRAMES);
+        cityflight::envfilter::BUDGET.store(budget, Ordering::Relaxed);
+        let parallel = sys::cmdline_arg("flight.parallel").as_deref() == Some("1");
+        cityflight::envfilter::PARALLEL.store(parallel, Ordering::Relaxed);
+        let check_every = sys::cmdline_arg("flight.check_every").and_then(|s| s.parse::<u32>().ok()).unwrap_or(4).clamp(1, 50);
+        cityflight::envfilter::CHECK_EVERY.store(check_every, Ordering::Relaxed);
+        let horizon_ms = sys::cmdline_arg("flight.horizon").and_then(|s| s.parse::<f64>().ok()).map_or(16_000, |s| (s * 1000.0) as u32).clamp(1_000, 16_000);
+        cityflight::envfilter::HORIZON_MS.store(horizon_ms, Ordering::Relaxed);
+        log(format!("filter: {escapes} escapes, budget {budget} frames, pilot checked every {check_every} ticks, horizon {:.1} s", horizon_ms as f64 / 1000.0));
         let scenario = sys::cmdline_arg("flight.scenario").and_then(|s| s.parse::<usize>().ok()).map_or(4, |n| n.clamp(1, 5) - 1);
 
         // A GPU renderer (flightgpu, another process drawing with the Mali) may
@@ -231,6 +346,9 @@ mod tv {
         let t0 = sys::monotonic();
         let world: &'static World = Box::leak(Box::new(World::new(1337)));
         log(format!("world built in {:.1} s: {} buildings", (sys::monotonic() - t0).as_secs_f64(), world.boxes.len()));
+        if sys::cmdline_arg("flight.selftest").as_deref() == Some("1") {
+            selftest(world, scenario);
+        }
         let controls = Arc::new(Mutex::new(Controls::default()));
         let report = Arc::new(Mutex::new(Report {
             stage: "Starting the Lean JSBSim plant and the safety filter (about a minute)...".into(), ..Default::default()

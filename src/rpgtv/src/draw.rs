@@ -299,7 +299,7 @@ impl Painter {
 
         // Footer.
         cv.fill(0, FOOT, W as i32, 44, BAND);
-        self.line(&mut cv, Face::Sans, 17.0, LEFT - 26, FOOT + 12, GREY, "Up/Down choose - OK confirms - 1-9 pick - Back exits");
+        self.line(&mut cv, Face::Sans, 17.0, LEFT - 26, FOOT + 12, GREY, "Up/Down choose - OK confirms - Back exits   (keyboard: 1-9 pick)");
         let right = sc.error.as_deref().map(|e| format!("Refused: {e}")).unwrap_or_else(|| status.to_owned());
         if !right.is_empty() {
             let rw = self.width(Face::Sans, 17.0, &right) as i32;

@@ -2,10 +2,10 @@ Bootloader source map
 =====================
 
 Signed second-stage updates and network execution: Update/README.txt. The
-installed G13 gate uses the shared signed manifest and UDP receiver to run a
-temporary bootloader from Ethernet. The new local candidate also writes signed
-application images to two fixed eMMC banks, without recovery Linux. It is not
-installed or hardware-tested. Policy and effect-order proofs are included in
+G13 gate uses the shared signed manifest and UDP receiver to run a temporary
+bootloader from Ethernet or write signed application images to two fixed eMMC
+banks, without recovery Linux. Current physical validation and deployment
+state are in research/G13_APP_UPDATES.txt. Policy and effect-order proofs are included in
 prove.py; deployment notes and ARM checks live in tools/bootloader/update/.
 
 The code follows the same separation as TV.Runtime / TV.Supervisor: pure
@@ -102,8 +102,9 @@ sealed/duplicate protection and exact nonwrapping append bounds. ParserProofs
 checks rejection before reads and RX payload bounds. Crypto observations and
 the physical adapter are still trusted.
 
-The current safety/type cleanup is LOCAL ONLY, not installed or hardware-tested.
-Earlier physical evidence and the installed image hash are recorded separately
-in research/G13_SIGNED_NETWORK_BOOT.txt. Rebuilding assets/build/ does not update
-the TV. The retained installed-build snapshot remains in
+The safety/type cleanup and direct writer have passed physical RAM trials;
+see research/G13_APP_UPDATES.txt for the current deployment state and hashes.
+Earlier physical evidence is recorded separately in
+research/G13_SIGNED_NETWORK_BOOT.txt. Rebuilding assets/build/ does not update
+the TV. The previous installed-build snapshot remains in
 assets/research/g13-network-default/build-snapshot.zip.

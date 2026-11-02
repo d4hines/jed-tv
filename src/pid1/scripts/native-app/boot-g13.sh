@@ -26,7 +26,10 @@ setprop sys.dande.launcher_ready 0
 # The bootloader publishes a bank only after signature and full-image checks.
 # The mount is inherited by the supervisor and its private app namespaces.
 if [ -f "$config/apps.sh" ]; then
-    . "$config/apps.sh" || fallback 'authenticated app image mount failed'
+    . "$config/apps.sh"
+    # mksh can exit on a failing function invoked inside a sourced file even
+    # when the dot command has an || handler. Call the function here instead.
+    dande_mount_apps || fallback 'authenticated app image mount failed'
 fi
 # Reapply in the post-fs service namespace. The early-init remount does not
 # survive the stock mount setup as seen by services on this G13.

@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import struct
 import subprocess
+import tarfile
 import tempfile
 import sys
 sys.dont_write_bytecode = True
@@ -48,10 +49,23 @@ def build(record, key, version, output):
                 files[str(path.relative_to(tree))] = hashlib.sha256(path.read_bytes()).hexdigest()
             elif path.is_dir(): path.chmod(0o755)
         image = output/'apps.erofs'
+        # Put labels in the image. G13 rejects context= overrides on EROFS;
+        # unlabeled app files cannot be executed by the confined launcher.
+        # PAX xattrs avoid requiring host root privileges to set security.*.
+        archive = Path(temporary)/'root.tar'
+        with tarfile.open(archive, 'w', format=tarfile.PAX_FORMAT) as tar:
+            for path in [tree, *sorted(tree.rglob('*'))]:
+                info = tar.gettarinfo(str(path), arcname='.' if path == tree else str(path.relative_to(tree)))
+                info.uid = info.gid = info.mtime = 0
+                info.uname = info.gname = ''
+                info.pax_headers = {'SCHILY.xattr.security.selinux': 'u:object_r:shell_data_file:s0\0'}
+                if path.is_file():
+                    with path.open('rb') as source: tar.addfile(info, source)
+                else: tar.addfile(info)
         # 4 KiB LZ4 layout supported by the recorded G13 5.15.167 kernel.
         subprocess.run(['mkfs.erofs', '-zlz4hc', '-E', 'legacy-compress', '-C4096',
                         '-T0', '-U00000000-0000-0000-0000-000000000013', '--all-root',
-                        str(image), str(tree)], check=True)
+                        '--tar=f', str(image), str(archive)], check=True)
         raw = image.read_bytes()
         if len(raw) > CAPACITY: raise ValueError(f'Image {len(raw)} exceeds bank payload {CAPACITY}')
         if struct.unpack_from('<I', raw, 1024)[0] != 0xe0f5e1e2: raise ValueError('EROFS magic')

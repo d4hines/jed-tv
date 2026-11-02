@@ -19,7 +19,7 @@ import g13_device as d
 BUILD=ROOT/'assets/build/leanboot-network'
 EVIDENCE=ROOT/'assets/research/g13-network-default'
 PINNED={
-    'boot_a':'53d3a25639b7bf5ecd3f493d0a958e9eac33a4f026f3ffdc4aee53a49a4ba3dd',
+    'boot_a':'f10714cb2d5d908b1e030228513b88b072a996f99471ef6e67be1fc32abd3779',
     'init_boot_a':'0ebb78f7eb550f8b2f524cf661342baeeaa55a70e3c3e5708d71f26381fc5e8b',
     'MBOOT':'a342fcdd62b2ce7121d977b9410d2c05aa51757bf7d26d6b445423e97122439b',
     'MBOOT_b':'643058879b84d044dea58a4572bd9ade1cc3140f3d3357eeaabae53be32ec382',
@@ -29,6 +29,9 @@ def sha(data):return hashlib.sha256(data).hexdigest()
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--apply',action='store_true')
+    p.add_argument('--ram-trial',type=Path,required=True,help='same-image signed execution trial directory')
+    p.add_argument('--app-trial',type=Path,required=True,help='same-image app install trial with independent readback.json')
+    p.add_argument('--mount-trial',type=Path,help='later cold RAM boot/readback after mount fixes (default: app trial)')
     args=p.parse_args()
     image=(BUILD/'g13-boot_a.img').read_bytes();digest=sha(image)
     build=json.loads((BUILD/'build.json').read_text())
@@ -39,14 +42,30 @@ def main():
     assert sha(public)!='21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9','Never install the public test key'
     assert json.loads((BUILD/'audit.json').read_text())['outputs']==build['outputs']
     assert json.loads((BUILD/'checks.json').read_text())['sha256']==build['outputs']['network-ram']['sha256']
+    assert json.loads((BUILD/'flash-checks.json').read_text())['sha256']==build['outputs']['flash-model']['sha256']
     cases=json.loads((BUILD/'gate-checks.json').read_text());assert len(cases)==6
-    trial=json.loads((EVIDENCE/'ram-trial/result.json').read_text())
-    serial=(EVIDENCE/'ram-trial/boot.bin').read_bytes()
+    trial=json.loads((args.ram_trial/'result.json').read_text())
+    serial=(args.ram_trial/'boot.bin').read_bytes()
     assert trial['image_sha256']==digest and trial['ready'] and trial['route']=='lean'
     assert b'LEANBOOT NET' in serial and b'NETWORK LEAN' in serial,'Same-image signed network execution required'
+    apps=json.loads((args.app_trial/'result.json').read_text())
+    mounted=args.mount_trial or args.app_trial
+    mount_boot=json.loads((mounted/'result.json').read_text())
+    readback=json.loads((mounted/'readback.json').read_text())
+    network=json.loads((args.app_trial/'network.json').read_text())
+    assert apps['image_sha256']==digest and apps['ready']
+    assert mount_boot['image_sha256']==digest and mount_boot['ready']
+    assert network['forged_rejected'] and network['signed_accepted']
+    assert readback['image_sha256']==digest and readback['boot_a_sha256']==PINNED['boot_a']
+    for check in ('payload_matches','files_match','active_tail_unchanged','other_bank_unchanged','reserved_regions_unchanged',
+                  'upgrade_read_only','image_mapping_read_only','updater_stopped','ready'):
+        assert readback[check],check
     d.connect();d.root()
     assert d.shell('getprop ro.boot.slot_suffix').strip()=='_a'
     assert d.shell('pidof tvinit').strip(),'Normal native userspace must be running'
+    assert d.shell('getprop init.svc.update_engine').strip()=='stopped'
+    assert d.shell('blockdev --getro /dev/block/by-name/upgrade').strip()=='1'
+    assert d.shell('cat /sys/firmware/devicetree/base/chosen/dande,apps-bank').strip('\0\r\n')==str(readback['bank'])
     for name,want in PINNED.items():
         assert d.shell('sha256sum /dev/block/by-name/'+name).split()[0]==want,name
     before=d.adb('exec-out','cat /dev/block/by-name/boot_a',capture_output=True,timeout=120).stdout

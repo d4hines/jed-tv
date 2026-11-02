@@ -104,7 +104,9 @@ def main():
     for source, dest in [('android-g13.rc', 'android.rc'), ('native-g13.rc', 'native.rc'),
                          ('early-g13.sh', 'early.sh'), ('boot-g13.sh', 'boot.sh'),
                          ('network-g13.sh', 'network.sh'), ('boot-log-g13.sh', 'boot-log.sh'),
-                         ('apps-g13.sh', 'apps.sh')]:
+                         ('apps-g13.sh', 'apps.sh'),
+                         ('app-storage-g13.rc', 'app-storage.rc'),
+                         ('app-storage-g13.sh', 'app-storage.sh')]:
         (config / dest).write_bytes((scripts / source).read_bytes())
     android = (config / 'android.rc').read_bytes()
     (config / 'native-entry.rc').write_bytes(android + b'\nimport /metadata/dande-tv/native.rc\n')

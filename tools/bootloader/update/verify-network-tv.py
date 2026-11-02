@@ -86,8 +86,8 @@ def main():
         lean=d.shell('getprop ro.boot.leanboot').strip()
         assert lean in (('','0') if next_state==4 else ('1',)),lean
         for service in ['tvinit','surfaceflinger','audioserver']:assert d.shell('pidof '+service).strip()
-        if next_state==4:assert b'LEANBOOT WAIT' not in data
-        else:assert b'LEANBOOT WAIT' in data
+        # App recovery remains available on the MBOOT-input fallback too.
+        assert b'LEANBOOT WAIT' in data
         assert (b'NETWORK LEAN' in data)==network
         result={'restart':index,'boot_id':boot,'journal_sequence':got_seq,'journal_state':got_state,
                 'bootloader':'MBOOT' if next_state==4 else 'Lean','boot_a_sha256':actual,

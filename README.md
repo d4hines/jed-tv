@@ -8,7 +8,7 @@ Start with [the sharing review](SHARE_REVIEW.md) and
 [third-party provenance](THIRD_PARTY.md). The exact source revision, file
 selection, and edits are in [the manifest](sharing/source-manifest.json).
 
-This copy retains 2,081 original files, including all 576 Lean files and 337
+This copy retains 2,095 original files, including all 585 Lean files and 338
 research files, plus an archived historical agent log. The team-owned Zr
 runtime/DSL, PID1, bootloader, proofs, applications, tests, and generators are
 included. City Flight is included with the author's public redistribution permission,

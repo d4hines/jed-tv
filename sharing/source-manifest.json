@@ -1,5 +1,5 @@
 {
-  "source_commit": "85528fe05f60018ae2bb29129758c15e8f73e660",
+  "source_commit": "120f0b614e2913b23dab6473400bf52db967111a",
   "source_ref": "internal/main (local snapshot; SSH refresh unavailable)",
   "files": [
     {
@@ -14,10 +14,10 @@
       "path": "AGENTS.md",
       "decision": "included",
       "reason": "Second review: original interoperability tooling/research or documented artwork use",
-      "sha256": "5f4a05b9d0b9cdb4f15bc68a65a84aafc8aabc222b8fdec3617ed2727536aef9",
-      "bytes": 68856,
+      "sha256": "4bc901109911e43d03a27db2b1ab9a76d0e4329e08b30ac65b3d55c386b41a65",
+      "bytes": 70114,
       "destination": "research/archive/INTERNAL_AGENT_NOTES.txt",
-      "output_sha256": "5f4a05b9d0b9cdb4f15bc68a65a84aafc8aabc222b8fdec3617ed2727536aef9"
+      "output_sha256": "4bc901109911e43d03a27db2b1ab9a76d0e4329e08b30ac65b3d55c386b41a65"
     },
     {
       "path": "NEXT_STEPS.md",
@@ -150,9 +150,9 @@
       "path": "demo/run.py",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "3e62288e0dc66f0d4021e8f5ee4df6e9d1cc9d4dde30c854de767ca7cf1853ba",
-      "bytes": 11017,
-      "output_sha256": "3e62288e0dc66f0d4021e8f5ee4df6e9d1cc9d4dde30c854de767ca7cf1853ba"
+      "sha256": "195f9f88276138078e997d5d2852a4750ed62db5591243f9ff02d949ee1a40c6",
+      "bytes": 11702,
+      "output_sha256": "195f9f88276138078e997d5d2852a4750ed62db5591243f9ff02d949ee1a40c6"
     },
     {
       "path": "demo/rust-toolchain.json",
@@ -637,9 +637,9 @@
       "path": "research/G13_SIGNED_NETWORK_BOOT.txt",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "368d418cb7e456190ae0ab3048db734233173029bdbc995b1e485996d57e45b6",
-      "bytes": 10772,
-      "output_sha256": "368d418cb7e456190ae0ab3048db734233173029bdbc995b1e485996d57e45b6"
+      "sha256": "3874bfe9ed52c022103595880a911771f282f3de0cafabea09652127dfc177b6",
+      "bytes": 11772,
+      "output_sha256": "3874bfe9ed52c022103595880a911771f282f3de0cafabea09652127dfc177b6"
     },
     {
       "path": "research/G13_STARTUP_TRACE.txt",
@@ -3629,9 +3629,9 @@
       "path": "src/bootloader/README.txt",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "81ea280a7801e1a3c37f687c0bc45915df69e513b00788c0486cc9c49c5a3299",
-      "bytes": 6492,
-      "output_sha256": "81ea280a7801e1a3c37f687c0bc45915df69e513b00788c0486cc9c49c5a3299"
+      "sha256": "88138a8242ee9f6a56e5ab46fb5ad74d7c55ea2eec9a4e5e4be0ef2410ac1cd6",
+      "bytes": 6542,
+      "output_sha256": "88138a8242ee9f6a56e5ab46fb5ad74d7c55ea2eec9a4e5e4be0ef2410ac1cd6"
     },
     {
       "path": "src/bootloader/Stage0.lean",
@@ -3885,9 +3885,9 @@
       "path": "src/bootloader/Update/README.txt",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "2047721d9d0a88be3aeee0c73bb3706fb99986b8108c44e17f23651a8a2b4d52",
-      "bytes": 15924,
-      "output_sha256": "2047721d9d0a88be3aeee0c73bb3706fb99986b8108c44e17f23651a8a2b4d52"
+      "sha256": "232fa030844023e9f5a361456b17966614439195b93bfb5a633eb3b1a1690232",
+      "bytes": 15832,
+      "output_sha256": "232fa030844023e9f5a361456b17966614439195b93bfb5a633eb3b1a1690232"
     },
     {
       "path": "src/bootloader/Update/Receiver/Plan.lean",
@@ -7077,9 +7077,9 @@
       "path": "src/flighttv/src/main.rs",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "7dc1ff94755b90ae93bbeed8f68db276db565f4bd66bb906efe36eabe374c262",
-      "bytes": 16714,
-      "output_sha256": "7dc1ff94755b90ae93bbeed8f68db276db565f4bd66bb906efe36eabe374c262"
+      "sha256": "d7c64314b819f154175933cde6baf9cbdc2d23647c3f0d741fd94497cfa25df6",
+      "bytes": 24686,
+      "output_sha256": "d7c64314b819f154175933cde6baf9cbdc2d23647c3f0d741fd94497cfa25df6"
     },
     {
       "path": "src/flighttv/src/render.rs",
@@ -8797,17 +8797,17 @@
       "path": "src/pid1/lean/TV/Core.lean",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "af88575a04547d53bfbea376bd0ed6de20a286be22e988968f883f0dfde50fc1",
-      "bytes": 70738,
-      "output_sha256": "af88575a04547d53bfbea376bd0ed6de20a286be22e988968f883f0dfde50fc1"
+      "sha256": "8f09ce926f82d647a4813e3e1d71ea90c981e893fa28c3205c6da51e6b482407",
+      "bytes": 81014,
+      "output_sha256": "8f09ce926f82d647a4813e3e1d71ea90c981e893fa28c3205c6da51e6b482407"
     },
     {
       "path": "src/pid1/lean/TV/CoreProofs.lean",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "cd9b0560c3d0c27ad9d9b125a1fe784c41a43217c2a47e66ccf3e1f8a797afd8",
-      "bytes": 7047,
-      "output_sha256": "cd9b0560c3d0c27ad9d9b125a1fe784c41a43217c2a47e66ccf3e1f8a797afd8"
+      "sha256": "520a576a634bef779324b0da7a76f61e0fb60acbd4466d2269af86d028778b17",
+      "bytes": 9468,
+      "output_sha256": "520a576a634bef779324b0da7a76f61e0fb60acbd4466d2269af86d028778b17"
     },
     {
       "path": "src/pid1/lean/TV/Display/Scanout.lean",
@@ -9157,25 +9157,25 @@
       "path": "src/pid1/scripts/native-app/android-g13.rc",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "50530848173d5b3f5aa1c2a4f71f30e1d5507572d22aa293470c31f2c4f8e5c0",
-      "bytes": 228,
-      "output_sha256": "50530848173d5b3f5aa1c2a4f71f30e1d5507572d22aa293470c31f2c4f8e5c0"
+      "sha256": "7fc9dc5459d931e4df78525e943da6a85c583e6b6b16fffebb7b61a016ff797c",
+      "bytes": 269,
+      "output_sha256": "7fc9dc5459d931e4df78525e943da6a85c583e6b6b16fffebb7b61a016ff797c"
     },
     {
       "path": "src/pid1/scripts/native-app/apps-g13.sh",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "79da223028b8f5aad0edf159ec2db5ad3883983734130d0d85232a91b5eff0b2",
-      "bytes": 1707,
-      "output_sha256": "79da223028b8f5aad0edf159ec2db5ad3883983734130d0d85232a91b5eff0b2"
+      "sha256": "811407e52f0daeccf0b3cf99f95675762b848a8195be83b77f13d0637cb30795",
+      "bytes": 1839,
+      "output_sha256": "811407e52f0daeccf0b3cf99f95675762b848a8195be83b77f13d0637cb30795"
     },
     {
       "path": "src/pid1/scripts/native-app/boot-g13.sh",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "c6af3a0891bcb9a7195b7cd4044de06dc8b26a22fd759265da457f43eab89994",
-      "bytes": 4742,
-      "output_sha256": "c6af3a0891bcb9a7195b7cd4044de06dc8b26a22fd759265da457f43eab89994"
+      "sha256": "13379fb0cc930129fe4aad7c2e937586a0c5dcb5d2b25ee4cab427c1c4c260e1",
+      "bytes": 4918,
+      "output_sha256": "13379fb0cc930129fe4aad7c2e937586a0c5dcb5d2b25ee4cab427c1c4c260e1"
     },
     {
       "path": "src/pid1/scripts/native-app/boot-log-g13.sh",
@@ -9222,9 +9222,9 @@
       "path": "src/pid1/scripts/native-app/start-android.sh",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "e8ea3eb3363c73f311f1ef3b89a39351db9d48c67a503d2a76d86fa9e2ea1de0",
-      "bytes": 1397,
-      "output_sha256": "e8ea3eb3363c73f311f1ef3b89a39351db9d48c67a503d2a76d86fa9e2ea1de0"
+      "sha256": "1c95131baf56f14d8e6c2a151f6b19fde3a6c270c2338bc6b28e416ca4f73eaf",
+      "bytes": 1546,
+      "output_sha256": "1c95131baf56f14d8e6c2a151f6b19fde3a6c270c2338bc6b28e416ca4f73eaf"
     },
     {
       "path": "src/pid1/scripts/native-app/start.sh",
@@ -9894,9 +9894,9 @@
       "path": "src/rpgtv/src/draw.rs",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "1bb0aa661cfaedfd305f9b182b86f5384d83ce354fd55b7de571d806ac4548cf",
-      "bytes": 12371,
-      "output_sha256": "1bb0aa661cfaedfd305f9b182b86f5384d83ce354fd55b7de571d806ac4548cf"
+      "sha256": "f1427c311b876fd856b3d8b46f0b32d1200f6a97dd78a90e62f14f6903a5532e",
+      "bytes": 12383,
+      "output_sha256": "f1427c311b876fd856b3d8b46f0b32d1200f6a97dd78a90e62f14f6903a5532e"
     },
     {
       "path": "src/rpgtv/src/engine.rs",
@@ -10118,9 +10118,9 @@
       "path": "src/third_party/cityflight/README.txt",
       "decision": "included",
       "reason": "Import provenance expressly identifies this wrapper as team-owned, or factual toolchain metadata",
-      "sha256": "58032f149869f82f47f4a3869d3f698d11aca55a6363c85abb2a0d055e7630b4",
-      "bytes": 1939,
-      "output_sha256": "58032f149869f82f47f4a3869d3f698d11aca55a6363c85abb2a0d055e7630b4"
+      "sha256": "ed2f206ca75b81f3f01418dfa18a7ac832a77f83fb0dcb1aaa665cad8fd2df09",
+      "bytes": 2683,
+      "output_sha256": "ed2f206ca75b81f3f01418dfa18a7ac832a77f83fb0dcb1aaa665cad8fd2df09"
     },
     {
       "path": "src/third_party/cityflight/build.rs",
@@ -10142,17 +10142,17 @@
       "path": "src/third_party/cityflight/c/cityjsb_abi.c",
       "decision": "included",
       "reason": "Owner confirmed author authorized public redistribution on 2026-11-01; see PUBLICATION.txt and JSBSIM_NOTICES.txt",
-      "sha256": "77b04043303757df517718d88ae25f64ea98510d4fb5956709fa68e5f7b1d05d",
-      "bytes": 2624,
-      "output_sha256": "77b04043303757df517718d88ae25f64ea98510d4fb5956709fa68e5f7b1d05d"
+      "sha256": "5bf645d4fd3b0732544a6de958e164ec5293aeec35bc71fc50ad4a0af6412d22",
+      "bytes": 3267,
+      "output_sha256": "5bf645d4fd3b0732544a6de958e164ec5293aeec35bc71fc50ad4a0af6412d22"
     },
     {
       "path": "src/third_party/cityflight/lean/CityJsb/Plant.lean",
       "decision": "included",
       "reason": "Owner confirmed author authorized public redistribution on 2026-11-01; see PUBLICATION.txt and JSBSIM_NOTICES.txt",
-      "sha256": "41b9bee1255170a755f3ab1c5710542e905eaafa8451f02844d4216b617dbe8a",
-      "bytes": 2609,
-      "output_sha256": "41b9bee1255170a755f3ab1c5710542e905eaafa8451f02844d4216b617dbe8a"
+      "sha256": "bcdb2f02da835c75e9897fbfcb5511a3f4a19c9fb3e5609f5655758140fbc8a4",
+      "bytes": 3353,
+      "output_sha256": "bcdb2f02da835c75e9897fbfcb5511a3f4a19c9fb3e5609f5655758140fbc8a4"
     },
     {
       "path": "src/third_party/cityflight/lean/CityJsb/Template.lean",
@@ -10166,9 +10166,9 @@
       "path": "src/third_party/cityflight/lean/CityJsb.lean",
       "decision": "included",
       "reason": "Owner confirmed author authorized public redistribution on 2026-11-01; see PUBLICATION.txt and JSBSIM_NOTICES.txt",
-      "sha256": "8cb21499f753fc8bd47af63a1406e89dfc11c8f4bb86284b0a48767936851dae",
-      "bytes": 21,
-      "output_sha256": "8cb21499f753fc8bd47af63a1406e89dfc11c8f4bb86284b0a48767936851dae"
+      "sha256": "79640c63f0a93a12b0e6ee85e2cdd4e9f6b0c8a3975d9aaf9f30bc54eb8c2865",
+      "bytes": 44,
+      "output_sha256": "79640c63f0a93a12b0e6ee85e2cdd4e9f6b0c8a3975d9aaf9f30bc54eb8c2865"
     },
     {
       "path": "src/third_party/cityflight/lean/JsbExact/C172Gen.lean",
@@ -10214,17 +10214,17 @@
       "path": "src/third_party/cityflight/lean/JsbExact.lean",
       "decision": "included",
       "reason": "Owner confirmed author authorized public redistribution on 2026-11-01; see PUBLICATION.txt and JSBSIM_NOTICES.txt",
-      "sha256": "fc82262456c1d9216f5fbaf7d05ac057b317a33858b6df7ff06c92fe43d1e76b",
-      "bytes": 22,
-      "output_sha256": "fc82262456c1d9216f5fbaf7d05ac057b317a33858b6df7ff06c92fe43d1e76b"
+      "sha256": "9ef900c0ae7a02c81a72219abc3193734775f62cc81a9c05d10004327bd0df1a",
+      "bytes": 72,
+      "output_sha256": "9ef900c0ae7a02c81a72219abc3193734775f62cc81a9c05d10004327bd0df1a"
     },
     {
       "path": "src/third_party/cityflight/lean/lakefile.lean",
       "decision": "included",
       "reason": "Import provenance expressly identifies this wrapper as team-owned, or factual toolchain metadata",
-      "sha256": "aa3d53f31afd8e2747ed488bd48714e7a89446811e7d15b7e3148e20673734d4",
-      "bytes": 435,
-      "output_sha256": "aa3d53f31afd8e2747ed488bd48714e7a89446811e7d15b7e3148e20673734d4"
+      "sha256": "a8ec4c9ebe04b5120615727d5b09d0004df530077ded629cc42452ea4c9f1be4",
+      "bytes": 1159,
+      "output_sha256": "a8ec4c9ebe04b5120615727d5b09d0004df530077ded629cc42452ea4c9f1be4"
     },
     {
       "path": "src/third_party/cityflight/lean/lean-toolchain",
@@ -10238,9 +10238,9 @@
       "path": "src/third_party/cityflight/src/envfilter.rs",
       "decision": "included",
       "reason": "Owner confirmed author authorized public redistribution on 2026-11-01; see PUBLICATION.txt and JSBSIM_NOTICES.txt",
-      "sha256": "6d7c10d38104fea8ef59c0c8589f92750ef3e252661f51d1963b60ebbc548413",
-      "bytes": 37946,
-      "output_sha256": "6d7c10d38104fea8ef59c0c8589f92750ef3e252661f51d1963b60ebbc548413"
+      "sha256": "91f611eeaa8d7faba06bf4328714e0471a5a307c4017288eb4ccbddaef41707c",
+      "bytes": 49391,
+      "output_sha256": "91f611eeaa8d7faba06bf4328714e0471a5a307c4017288eb4ccbddaef41707c"
     },
     {
       "path": "src/third_party/cityflight/src/escape.rs",
@@ -14662,9 +14662,9 @@
       "path": "tools/bootloader/README.txt",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "2ec2c21e20df744925e1a671c14eb4e9e05243bb03c545f4ebfcde7ef527264f",
-      "bytes": 14326,
-      "output_sha256": "2ec2c21e20df744925e1a671c14eb4e9e05243bb03c545f4ebfcde7ef527264f"
+      "sha256": "4d6f15606a97786b22be51ff84914ad05f3f432047248110341c7214115e5cb1",
+      "bytes": 14409,
+      "output_sha256": "4d6f15606a97786b22be51ff84914ad05f3f432047248110341c7214115e5cb1"
     },
     {
       "path": "tools/bootloader/Unsafe/Arm.lean",
@@ -14710,9 +14710,9 @@
       "path": "tools/bootloader/boot-image-tv.py",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "595b74418523be417d3a3bdef6ed474e9c2526988dc1aff5ea3c5b5d44e5ba2c",
-      "bytes": 3774,
-      "output_sha256": "595b74418523be417d3a3bdef6ed474e9c2526988dc1aff5ea3c5b5d44e5ba2c"
+      "sha256": "457c358131060a9d00b7c6aa71d8733ff6f0ad7c92d535e2d254fc89a7c64978",
+      "bytes": 4668,
+      "output_sha256": "457c358131060a9d00b7c6aa71d8733ff6f0ad7c92d535e2d254fc89a7c64978"
     },
     {
       "path": "tools/bootloader/build-boot-image.py",
@@ -14958,17 +14958,17 @@
       "path": "tools/bootloader/update/FLASHING.txt",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "3139255a1ba15a2be225e48dcac0b79e8ad4aa989075cda291b2bfa3d030f3b7",
-      "bytes": 7689,
-      "output_sha256": "3139255a1ba15a2be225e48dcac0b79e8ad4aa989075cda291b2bfa3d030f3b7"
+      "sha256": "caedd1f4d8b0cbb33ee06358f0b9d090a818d8cb572242cfbef61e5e7c828e0a",
+      "bytes": 9392,
+      "output_sha256": "caedd1f4d8b0cbb33ee06358f0b9d090a818d8cb572242cfbef61e5e7c828e0a"
     },
     {
       "path": "tools/bootloader/update/README.txt",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "8495bb0ac6cb1196709edca2383da3f8b40309f37b3595dc3fdf290d68db4d61",
-      "bytes": 6104,
-      "output_sha256": "8495bb0ac6cb1196709edca2383da3f8b40309f37b3595dc3fdf290d68db4d61"
+      "sha256": "ae45dbb5c313b113651b3b3fb37dee463bf51c20ddd0108f3f337c27f4711093",
+      "bytes": 6151,
+      "output_sha256": "ae45dbb5c313b113651b3b3fb37dee463bf51c20ddd0108f3f337c27f4711093"
     },
     {
       "path": "tools/bootloader/update/audit-network.py",
@@ -14998,9 +14998,9 @@
       "path": "tools/bootloader/update/build-apps.py",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "df5314dcb4f9e80f5686f7918be4de5c737af81208faa181270dda60a64a3622",
-      "bytes": 4060,
-      "output_sha256": "df5314dcb4f9e80f5686f7918be4de5c737af81208faa181270dda60a64a3622"
+      "sha256": "ecdf51fca6348a20e9ddd4efd920431a55a82a19be66ed24608019bbc9673454",
+      "bytes": 4961,
+      "output_sha256": "ecdf51fca6348a20e9ddd4efd920431a55a82a19be66ed24608019bbc9673454"
     },
     {
       "path": "tools/bootloader/update/build-network.py",
@@ -15126,9 +15126,9 @@
       "path": "tools/bootloader/update/install-network.py",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "158661a153f4d50fdbd5d818e5a5588852b17d3da3ff5c91117091150a855500",
-      "bytes": 4631,
-      "output_sha256": "158661a153f4d50fdbd5d818e5a5588852b17d3da3ff5c91117091150a855500"
+      "sha256": "5eb6ebacb4332d1835474a183454ffa8eee223a569e71875119c9697bf8fdbfd",
+      "bytes": 6213,
+      "output_sha256": "5eb6ebacb4332d1835474a183454ffa8eee223a569e71875119c9697bf8fdbfd"
     },
     {
       "path": "tools/bootloader/update/model.ld",
@@ -15198,9 +15198,9 @@
       "path": "tools/bootloader/update/verify-network-tv.py",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "e8dce06c51dcc34a989388300f03077e4a6d0d2ae68ef37465b17a333c410857",
-      "bytes": 5065,
-      "output_sha256": "e8dce06c51dcc34a989388300f03077e4a6d0d2ae68ef37465b17a333c410857"
+      "sha256": "6efcb01a088f0dad35815f789b0ef0ea4bdd51caddbefb0e09fc7c5026d92087",
+      "bytes": 5073,
+      "output_sha256": "6efcb01a088f0dad35815f789b0ef0ea4bdd51caddbefb0e09fc7c5026d92087"
     },
     {
       "path": "tools/bootloader/vendor/UPSTREAM.txt",
@@ -16086,9 +16086,9 @@
       "path": "tools/native-app/build-g13-boot.py",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "84e9e7113f29fa1b5c7d43c44653bf8c0fe5e5c9094c6c36272725e024ccb210",
-      "bytes": 8454,
-      "output_sha256": "84e9e7113f29fa1b5c7d43c44653bf8c0fe5e5c9094c6c36272725e024ccb210"
+      "sha256": "648f3cd281d069cad2ccc94fbba73da4218297d6a646314f5e3884433d1659ee",
+      "bytes": 8588,
+      "output_sha256": "648f3cd281d069cad2ccc94fbba73da4218297d6a646314f5e3884433d1659ee"
     },
     {
       "path": "tools/native-app/build.sh",
@@ -16110,9 +16110,9 @@
       "path": "tools/native-app/g13-boot.py",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "c0ecf23c1cde3320a84cd599a8e4a6c5925d511cc1186874044bfa9ea0ad3e3a",
-      "bytes": 10437,
-      "output_sha256": "c0ecf23c1cde3320a84cd599a8e4a6c5925d511cc1186874044bfa9ea0ad3e3a"
+      "sha256": "e8303e8444b32769d48e22dbe2fa2730d7256c65ab759ba5d915cf9fb73899ca",
+      "bytes": 12155,
+      "output_sha256": "e8303e8444b32769d48e22dbe2fa2730d7256c65ab759ba5d915cf9fb73899ca"
     },
     {
       "path": "tools/native-app/g13-unlock-logo.py",
@@ -16158,9 +16158,9 @@
       "path": "tools/native-app/run-g13.py",
       "decision": "included",
       "reason": "source-or-authored-research; see THIRD_PARTY.md and SHARE_REVIEW.md",
-      "sha256": "f0cfc859d447d0cb49547e14d82d7568e90cafa935a0cc0f111981d3e670ab4c",
-      "bytes": 13467,
-      "output_sha256": "f0cfc859d447d0cb49547e14d82d7568e90cafa935a0cc0f111981d3e670ab4c"
+      "sha256": "0598c955770a81fd4e4febbcfee59de5fb08ff8ac60b87c051568d49c03f8129",
+      "bytes": 13478,
+      "output_sha256": "0598c955770a81fd4e4febbcfee59de5fb08ff8ac60b87c051568d49c03f8129"
     },
     {
       "path": "tools/native-app/run.py",
@@ -16689,15 +16689,127 @@
       "sha256": "0d520c1dc7f10e791a570f457528ba976d7f0c674fbc36f3e5869be6b5a5cd32",
       "bytes": 1068,
       "output_sha256": "0d520c1dc7f10e791a570f457528ba976d7f0c674fbc36f3e5869be6b5a5cd32"
+    },
+    {
+      "path": "research/G13_APP_UPDATES.txt",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "586fa05100f5acb59a5ce1bc22c0c69293dfe046a60670d7ca29e1d7c71c8891",
+      "bytes": 8893,
+      "output_sha256": "586fa05100f5acb59a5ce1bc22c0c69293dfe046a60670d7ca29e1d7c71c8891"
+    },
+    {
+      "path": "src/pid1/scripts/native-app/app-storage-g13.rc",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "ee76a3a3e8318f1c31da91facb16e3177cdb586f5c615949f9811d4a8e9a46ae",
+      "bytes": 441,
+      "output_sha256": "ee76a3a3e8318f1c31da91facb16e3177cdb586f5c615949f9811d4a8e9a46ae"
+    },
+    {
+      "path": "src/pid1/scripts/native-app/app-storage-g13.sh",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "906694d0f7e5ce11764b683377a39491cca59abda53db8f28da0db8d9617c086",
+      "bytes": 555,
+      "output_sha256": "906694d0f7e5ce11764b683377a39491cca59abda53db8f28da0db8d9617c086"
+    },
+    {
+      "path": "src/third_party/cityflight/c/jxmath_host.c",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "e75b5ce181e3b3193c337764b49a2b0745a737df68a1c2a9ae44f09fa53366a2",
+      "bytes": 664,
+      "output_sha256": "e75b5ce181e3b3193c337764b49a2b0745a737df68a1c2a9ae44f09fa53366a2"
+    },
+    {
+      "path": "src/third_party/cityflight/lean/CityJsb/F/Plant.lean",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "3634018c6274814d19b186b06e9a33a83c3c458073febd0685648283b201c81f",
+      "bytes": 2651,
+      "output_sha256": "3634018c6274814d19b186b06e9a33a83c3c458073febd0685648283b201c81f"
+    },
+    {
+      "path": "src/third_party/cityflight/lean/CityJsb/F/Template.lean",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "aa9fcd91491b0fea39ce70614e46c10dfe960439a409bc0d932115d6df42eef2",
+      "bytes": 337,
+      "output_sha256": "aa9fcd91491b0fea39ce70614e46c10dfe960439a409bc0d932115d6df42eef2"
+    },
+    {
+      "path": "src/third_party/cityflight/lean/JsbExact/F/C172Gen.lean",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "bba1721930674fa768626660a27fd3a6f95e94643720cb6e070165bda8ada16c",
+      "bytes": 5353,
+      "output_sha256": "bba1721930674fa768626660a27fd3a6f95e94643720cb6e070165bda8ada16c"
+    },
+    {
+      "path": "src/third_party/cityflight/lean/JsbExact/F/Convert.lean",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "25e2b866193b9486c0799207cbcbb81dff8dcca3fcfce75c37f8a4675d952c2c",
+      "bytes": 5383,
+      "output_sha256": "25e2b866193b9486c0799207cbcbb81dff8dcca3fcfce75c37f8a4675d952c2c"
+    },
+    {
+      "path": "src/third_party/cityflight/lean/JsbExact/F/LinAlg.lean",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "b36dacb270c6128457c0e7cfe3107a89be360c2c382bb4e2805374b4ecef442a",
+      "bytes": 6135,
+      "output_sha256": "b36dacb270c6128457c0e7cfe3107a89be360c2c382bb4e2805374b4ecef442a"
+    },
+    {
+      "path": "src/third_party/cityflight/lean/JsbExact/F/Model.lean",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "d61db9e6b31241d6d6032761336b9464d7fe2d154f10b10db4c7b7dd7b125b0d",
+      "bytes": 31418,
+      "output_sha256": "d61db9e6b31241d6d6032761336b9464d7fe2d154f10b10db4c7b7dd7b125b0d"
+    },
+    {
+      "path": "src/third_party/cityflight/lean/JsbExact/F/Scalar.lean",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "2af85417001d70da67a22e4a38f6af175cc08e1202351a2ac492feb5a6f253c8",
+      "bytes": 5675,
+      "output_sha256": "2af85417001d70da67a22e4a38f6af175cc08e1202351a2ac492feb5a6f253c8"
+    },
+    {
+      "path": "src/third_party/cityflight/lean/JsbExact/F/Table.lean",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "162678a2ba5fe76f9ea07ef1fe64312df9f0d59287e7c0cda08b4e29e854242b",
+      "bytes": 2343,
+      "output_sha256": "162678a2ba5fe76f9ea07ef1fe64312df9f0d59287e7c0cda08b4e29e854242b"
+    },
+    {
+      "path": "src/third_party/cityflight/lean/Tools/JsbDiff.lean",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "d7a702d3cc455ae936a4ee0e61a3f1b583ef41877ad3d7437e76c1ecae589c86",
+      "bytes": 8972,
+      "output_sha256": "d7a702d3cc455ae936a4ee0e61a3f1b583ef41877ad3d7437e76c1ecae589c86"
+    },
+    {
+      "path": "tools/bootloader/update/verify-apps-tv.py",
+      "decision": "included",
+      "reason": "Reviewed incremental update: team source and research within existing sharing policy",
+      "sha256": "accbf076c2eb14970faa2cdacda360304f7dc5c890aff19b5c0aacb4b1b9ea30",
+      "bytes": 4713,
+      "output_sha256": "accbf076c2eb14970faa2cdacda360304f7dc5c890aff19b5c0aacb4b1b9ea30"
     }
   ],
   "review_revision": 2,
   "verification": {
-    "retained_original_files": 2081,
+    "retained_original_files": 2095,
     "excluded_original_files": 5,
-    "retained_lean_files": 576,
+    "retained_lean_files": 585,
     "excluded_lean_files": 0,
-    "retained_original_research_files": 337,
+    "retained_original_research_files": 338,
     "relocated_original_files": 1,
     "modified_original_files": [
       "research/ROOT_READBACK_NOTES.txt",
@@ -16719,5 +16831,14 @@
     "modified_svg_xml_valid": true,
     "builds_run": false,
     "hardware_contacted": false
-  }
+  },
+  "incremental_updates": [
+    {
+      "from_source_commit": "85528fe05f60018ae2bb29129758c15e8f73e660",
+      "to_source_commit": "120f0b614e2913b23dab6473400bf52db967111a",
+      "changed_original_files": 44,
+      "remote_refresh": "SSH authentication failed; used local internal/main",
+      "sharing_policy": "Existing exclusions, redactions, attribution and notices preserved"
+    }
+  ]
 }

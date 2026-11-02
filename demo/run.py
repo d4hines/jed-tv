@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Launch the self-contained graphical PID-1 demo (generic virtio surrogate)."""
-import argparse,hashlib,shutil,http.server,json,pathlib,platform,socket,struct,subprocess,sys,tempfile,threading,time
+import argparse,hashlib,os,shutil,http.server,json,pathlib,platform,socket,struct,subprocess,sys,tempfile,threading,time
 
 def main():
  ap=argparse.ArgumentParser(description=__doc__)
@@ -33,9 +33,13 @@ def main():
    files.append(f"{init}:/bin/tvinit");init=a.apps/'bin/bridge-init'
   subprocess.run([sys.executable,str(a.source/'tools/mkinitramfs.py'),str(init),str(rd),*files],check=True)
   audio=f'wav,id=a0,path={out}/audio.wav' if a.check else ('coreaudio,id=a0' if platform.system()=='Darwin' else 'sdl,id=a0')
+  # FLIGHT_SELFTEST=1: City flight compares its gate filter's parallel rollouts with the serial ones
+  # (src/flighttv/src/main.rs, `flight.selftest=1`) instead of flying; the check waits for its verdict.
+  # FLIGHT_ARGS: extra City flight options for experiments, e.g. FLIGHT_ARGS='flight.check_every=1'.
+  selftest=a.check and os.environ.get('FLIGHT_SELFTEST')=='1'
   cmd=['qemu-system-aarch64','-name','PID1 demo (virt32 surrogate)','-M','virt-11.1,highmem=off,gic-version=2','-cpu','cortex-a55,aarch64=off','-smp','4','-m','1430M',
        '-kernel',str(a.media/'kernel/zImage'),'-initrd',str(rd),
-       '-append',f'console=ttyAMA0 panic=-1 ip=off drm_kms_helper.drm_fbdev_overalloc=200 tvinit.demo=1 tvinit.iface=eth0 tvinit.ip=192.168.77.2/24 ytplay.server=http://192.168.77.1:{port}'+(f' bridge.audio=192.168.77.1:{pcm.server_address[1]}' if pcm else ''),
+       '-append',f'console=ttyAMA0 panic=-1 ip=off drm_kms_helper.drm_fbdev_overalloc=200 tvinit.demo=1 tvinit.iface=eth0 tvinit.ip=192.168.77.2/24 ytplay.server=http://192.168.77.1:{port}'+(f' bridge.audio=192.168.77.1:{pcm.server_address[1]}' if pcm else '')+(' flight.selftest=1' if selftest else '')+(' '+os.environ['FLIGHT_ARGS'] if os.environ.get('FLIGHT_ARGS') else ''),
        '-global','virtio-mmio.force-legacy=false','-netdev','user,id=n0,net=192.168.77.0/24,host=192.168.77.1','-device','virtio-net-device,netdev=n0',
        '-device','virtio-gpu-device,xres=1280,yres=720','-audiodev',audio,'-device','virtio-sound-device,audiodev=a0,streams=1','-device','virtio-keyboard-device','-device','virtio-rng-device',
        '-serial',f'file:{serial}','-qmp',f'unix:{qmp},server=on,wait=off','-no-reboot','-display','none' if a.check else ('cocoa' if platform.system()=='Darwin' else 'gtk')]
@@ -110,7 +114,11 @@ def main():
     key('ret');wait('rpgtv: phase scene "The Iron Door"');key('esc');wait('Infinite RPG exited')
     # City flight: the Lean JSBSim plant and the gate filter run on the TV; the city takes a while to build.
     key('right');key('ret');wait('flighttv: JSBSim plant and gate filter ready',timeout=180)
-    wait('flighttv: sim ',timeout=120);wait(' fps, ',timeout=60);snapshot('flight')
+    if selftest:
+     wait('flighttv: selftest ',timeout=900)
+     assert 'flighttv: selftest PASS' in serial.read_text(errors='replace'), 'the parallel gate differs from the serial one'
+    else:
+     wait('flighttv: sim ',timeout=120);wait(' fps, ',timeout=60);snapshot('flight')
     key('esc');wait('City flight exited')
     # Axiom: the Lean voxel game generates and meshes its island on the TV first.
     key('right');key('ret');wait('axiomtv: meshed ',timeout=300);wait('fps, title',timeout=120)

@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'assets/build/native-app-g13'
 BASE = '/data/local/tmp/dande-g13'
 APP_UIDS = [19001, 19002, 19003, 19005, 19006, 19007, 19008]
-APP_BINARIES = ('tvinit', 'ytplay', 'slides', 'doomtv', 'tvosd', 'rpgtv', 'flighttv', 'snaketv')
+APP_BINARIES = ('tvinit', 'ytplay', 'slides', 'doomtv', 'tvosd', 'rpgtv', 'flighttv', 'axiomtv', 'snaketv')
 
 
 def call(args, **kwargs):

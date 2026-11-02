@@ -145,4 +145,53 @@ macro "induction_on_boot" : tactic => `(tactic| (
   simp [bootOutputs, offline] at h
   exact fromAnyState _ _ h))
 
+/-- Every writable mount of every app, against every mount of the TEE helper. -/
+macro "cases_on_shared_mounts" : tactic => `(tactic| (
+  intro p d a m m' hm hw hm'
+  cases a <;> cases d <;>
+    simp [confine, appRow, appMounts, teeRow, dataDir, manifest, uidBase, effective,
+      Manifest.declares, Grants.has] at hm hm' <;>
+    (repeat' rcases hm with rfl | hm) <;> (repeat' rcases hm' with rfl | hm') <;> simp_all <;>
+    (try split) <;> (first | decide | simp_all | (intro h; injection h with h; revert h; decide))))
+
+/-- Unfold the Linux model over every row. -/
+macro "cases_on_permits" : tactic => `(tactic| (intros; rename_i a; cases a <;> simp_all [permits,
+  confine, appRow, appMounts, appDevices, daemonRow, teeRow, wifiRow, dhcpRow, dataDir, manifest,
+  uidBase, effective, under, Manifest.declares, Grants.has, Target.uid, Capability.isNetwork]))
+
+/-- Writes go only through writable mounts; for an app that is its data
+    directory, if saved data is in effect. -/
+macro "writes_stay_in_own_data" : tactic => `(tactic| (
+  intro p d a path h
+  simp only [permits, confine, appRow, appMounts] at h
+  cases hb : ((effective p a).has .savedData && (manifest a).declares .savedData) <;>
+    simp only [hb] at h <;> cases d <;> cases a <;> simp_all))
+
+/-- No app's device table has the TEE or eMMC nodes. -/
+macro "devices_by_table" : tactic => `(tactic| (
+  intro p d a w
+  cases w <;> cases d <;> cases a <;> simp [permits, confine, appRow, appDevices, under] <;> decide +kernel))
+
+/-- An app's own sockets follow its `lan` part, which follows its effective grants. -/
+macro "connections_by_grants" : tactic => `(tactic| (
+  intro p d a to h
+  cases a <;> simp_all [permits, confine, appRow, effective, Manifest.declares, manifest,
+    Grants.has, Capability.isNetwork]))
+
+/-- Signals reach only the same user, and every process has its own user. -/
+macro "signals_by_users" : tactic => `(tactic| (
+  intro p d x to h
+  simp only [permits] at h
+  cases to with
+  | pid1 => cases x <;> rename_i y <;> cases y <;> simp_all [Target.uid, confine, appRow,
+      daemonRow, teeRow, wifiRow, dhcpRow, manifest, uidBase]
+  | subject y =>
+    have := subjectsHaveTheirOwnUsers p d y x (by simpa [Target.uid] using h)
+    simp [this]))
+
+/-- The TEE helper's only writable mount is its store. -/
+macro "tee_writes_by_table" : tactic => `(tactic| (
+  intro p d path h
+  simp_all [permits, confine, daemonRow, teeRow]))
+
 end TV.Core

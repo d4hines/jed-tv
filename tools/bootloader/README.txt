@@ -4,7 +4,8 @@ Lean bootloader development
 Signed-update packaging, network boot, compiled ARM model, UDP loopback server
 and fault checks: tools/bootloader/update/README.txt. The installed network
 gate requires an explicit trusted public key. The persistent bank writer is
-still a separate model/RAM experiment, not an eMMC updater.
+a direct G13 eMMC application updater. Deployment state, physical readbacks
+and remaining limits are recorded in research/G13_APP_UPDATES.txt.
 
 Source architecture and formal proof coverage: src/bootloader/README.txt.
 Check the proofs without building firmware or running the test suites:
